@@ -109,6 +109,7 @@ MUST follow the rules below.
 
 - Must use **TypeScript** (strict mode enabled).
 - Must run on **Node.js 18+** (matching Fly.io default runtime).
+- Testing framework to Typescript/Node.js be services is **Jest**
 
 ##### 3.1.1.2 HTTP Framework
 
