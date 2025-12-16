@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import './index.css'
 import log from 'loglevel'
-import { fetchPurchaseOrders } from './api'
-import type { PurchaseOrder, CommoditySummary } from './types'
+import { fetchInventory, fetchPurchaseOrders } from './api'
+import type { InventoryItem, PurchaseOrder, CommoditySummary } from './types'
 import { LineChart, SERIES_COLORS } from './components/LineChart'
 import type { Point, Series } from './components/LineChart'
 
@@ -232,6 +232,16 @@ function formatNumber(value: number): string {
   return value.toFixed(0)
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  // Supports #RRGGBB
+  const cleaned = hex.replace('#', '')
+  if (cleaned.length !== 6) return `rgba(255,255,255,${alpha})`
+  const r = parseInt(cleaned.slice(0, 2), 16)
+  const g = parseInt(cleaned.slice(2, 4), 16)
+  const b = parseInt(cleaned.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 function UnderConstruction({ feature }: { feature: string }) {
   return (
     <div className="under-construction">
@@ -262,10 +272,12 @@ function UnderConstruction({ feature }: { feature: string }) {
 
 function CommoditiesView({
   orders,
+  inventory,
   loading,
   error,
 }: {
   orders: PurchaseOrder[]
+  inventory: InventoryItem[]
   loading: boolean
   error: string | null
 }) {
@@ -282,6 +294,13 @@ function CommoditiesView({
 
   // Group commodities from filtered orders
   const commodities = useMemo(() => groupCommodities(filteredOrders), [filteredOrders])
+
+  // Latest inventory by commodity (api-gateway returns current inventory already)
+  const inventoryByCommodity = useMemo(() => {
+    const map = new Map<string, InventoryItem>()
+    inventory.forEach((i) => map.set(i.commodityId, i))
+    return map
+  }, [inventory])
 
   // Create color map for commodities
   const commodityColors = useMemo(() => {
@@ -440,6 +459,7 @@ function CommoditiesView({
                 ? overlaySelection.has(c.id)
                 : selectedCommodity === c.id
               const color = commodityColors.get(c.id) || SERIES_COLORS[0]
+              const inv = inventoryByCommodity.get(c.id)
               
               return (
                 <div
@@ -470,6 +490,20 @@ function CommoditiesView({
                     <div className="stat-row">
                       <span className="stat-label">Total Units</span>
                       <span className="stat-value">{formatNumber(c.totalUnits)} {c.unit}</span>
+                    </div>
+                    <div className="stat-row">
+                      <span className="stat-label">Inventory</span>
+                      <span
+                        className="inventory-chip"
+                        style={{
+                          backgroundColor: hexToRgba(color, 0.12),
+                          borderColor: hexToRgba(color, 0.45),
+                          color,
+                        }}
+                        title={inv?.asOf ? `As of ${new Date(inv.asOf).toLocaleDateString()}` : undefined}
+                      >
+                        {inv ? `${formatNumber(inv.onHand)} ${inv.unit}` : '—'}
+                      </span>
                     </div>
                     <div className="stat-row">
                       <span className="stat-label">Total Cost</span>
@@ -614,6 +648,7 @@ function CommoditiesView({
 export default function App() {
   const [nav, setNav] = useState<NavId>('commodities')
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
+  const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -621,10 +656,11 @@ export default function App() {
     async function load() {
       setLoading(true)
       try {
-        const data = await fetchPurchaseOrders()
-        setOrders(data)
+        const [ordersData, inventoryData] = await Promise.all([fetchPurchaseOrders(), fetchInventory()])
+        setOrders(ordersData)
+        setInventory(inventoryData)
       } catch (err) {
-        log.error('Failed to load purchase orders', err)
+        log.error('Failed to load data', err)
         setError('Failed to load data')
       } finally {
         setLoading(false)
@@ -676,7 +712,7 @@ export default function App() {
         </div>
 
         {nav === 'commodities' && (
-          <CommoditiesView orders={orders} loading={loading} error={error} />
+          <CommoditiesView orders={orders} inventory={inventory} loading={loading} error={error} />
         )}
         {nav === 'positions' && <UnderConstruction feature="positions" />}
         {nav === 'trade' && <UnderConstruction feature="trade" />}

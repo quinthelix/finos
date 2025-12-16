@@ -64,22 +64,9 @@ function createPath(scaledPoints: ScaledPoint[]): string {
   
   let pathD = `M ${scaledPoints[0].x},${scaledPoints[0].y}`
   
-  if (scaledPoints.length === 2) {
-    pathD += ` L ${scaledPoints[1].x},${scaledPoints[1].y}`
-  } else if (scaledPoints.length > 2) {
-    for (let i = 0; i < scaledPoints.length - 1; i++) {
-      const p0 = scaledPoints[Math.max(0, i - 1)]
-      const p1 = scaledPoints[i]
-      const p2 = scaledPoints[i + 1]
-      const p3 = scaledPoints[Math.min(scaledPoints.length - 1, i + 2)]
-
-      const cp1x = p1.x + (p2.x - p0.x) / 6
-      const cp1y = p1.y + (p2.y - p0.y) / 6
-      const cp2x = p2.x - (p3.x - p1.x) / 6
-      const cp2y = p2.y - (p3.y - p1.y) / 6
-
-      pathD += ` C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`
-    }
+  // Straight segments between points (no smoothing)
+  for (let i = 1; i < scaledPoints.length; i++) {
+    pathD += ` L ${scaledPoints[i].x},${scaledPoints[i].y}`
   }
   
   return pathD

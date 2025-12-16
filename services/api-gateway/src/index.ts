@@ -5,6 +5,8 @@ import {
   ErpExtractorServiceClient,
   ListPurchaseOrdersRequest,
   PurchaseOrder,
+  ListCurrentInventoryRequest,
+  InventorySnapshot,
 } from './generated/erp_extractor.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -59,6 +61,36 @@ app.get('/api/company/:companyId/purchase-orders', async (request, reply) => {
     deliveryDate: po.deliveryDate?.toISOString(),
     createdAt: po.createdAt?.toISOString(),
     status: po.status,
+  }));
+
+  return reply.send({ data });
+});
+
+app.get('/api/company/:companyId/inventory', async (request, reply) => {
+  const { companyId } = request.params as { companyId: string };
+
+  const req: ListCurrentInventoryRequest = {
+    companyId: companyId || defaultCompanyId,
+  };
+
+  const client = erpClient;
+  if (!client) throw new Error('ERP client not initialized');
+
+  const res = await new Promise<{ snapshots: InventorySnapshot[] }>((resolve, reject) => {
+    client.listCurrentInventory(req, (err, response) => {
+      if (err || !response) return reject(err || new Error('no response'));
+      resolve(response);
+    });
+  });
+
+  const data = res.snapshots.map((s) => ({
+    id: s.id,
+    companyId: s.companyId,
+    commodityId: s.commodityId,
+    commodityName: s.commodityName,
+    onHand: s.onHand,
+    unit: s.unit,
+    asOf: s.asOf?.toISOString(),
   }));
 
   return reply.send({ data });

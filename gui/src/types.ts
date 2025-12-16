@@ -12,6 +12,16 @@ export type PurchaseOrder = {
   status: string
 }
 
+export type InventoryItem = {
+  id: string
+  companyId: string
+  commodityId: string
+  commodityName: string
+  onHand: number
+  unit: string
+  asOf: string
+}
+
 export type CommoditySummary = {
   id: string
   name: string

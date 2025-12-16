@@ -7,6 +7,11 @@ import {
   ListPurchaseOrdersResponse,
   GetPurchaseOrderRequest,
   PurchaseOrder,
+  InventorySnapshot,
+  ListInventorySnapshotsRequest,
+  ListInventorySnapshotsResponse,
+  ListCurrentInventoryRequest,
+  ListCurrentInventoryResponse,
 } from './generated/erp_extractor.js';
 
 type GrpcServerHandle = {
@@ -31,6 +36,19 @@ function mapRowToPurchaseOrder(row: any): PurchaseOrder {
     deliveryDate: delivery,
     createdAt: created,
     status: row.status,
+  };
+}
+
+function mapRowToInventorySnapshot(row: any): InventorySnapshot {
+  const asOf = row.as_of instanceof Date ? row.as_of : new Date(row.as_of);
+  return {
+    id: row.id ?? `${row.commodity_id}_${asOf.toISOString()}`,
+    companyId: row.company_id,
+    commodityId: row.commodity_id,
+    commodityName: row.commodity_name ?? row.commodity_id,
+    onHand: Number(row.on_hand),
+    unit: row.unit,
+    asOf,
   };
 }
 
@@ -92,6 +110,80 @@ export async function startGrpcServer(pool: Pool, host: string, port: number): P
           return;
         }
         callback(null, mapRowToPurchaseOrder(res.rows[0]));
+      } catch (err: any) {
+        callback(err, null);
+      }
+    },
+
+    listInventorySnapshots: async (
+      call: ServerUnaryCall<ListInventorySnapshotsRequest, ListInventorySnapshotsResponse>,
+      callback: sendUnaryData<ListInventorySnapshotsResponse>
+    ) => {
+      try {
+        const companyId = call.request.companyId;
+        const limit = call.request.limit && call.request.limit > 0 ? call.request.limit : 500;
+        const since = call.request.since ? new Date(Number(call.request.since.seconds) * 1000) : null;
+
+        const params: Array<string | number | Date> = [companyId];
+        let where = 's.company_id = $1';
+        if (since) {
+          params.push(since);
+          where += ` AND s.as_of > $${params.length}`;
+        }
+        params.push(limit);
+
+        const res = await pool.query(
+          `
+          SELECT
+            concat(s.commodity_id, '_', extract(epoch from s.as_of)) as id,
+            s.company_id,
+            s.commodity_id,
+            c.name as commodity_name,
+            s.on_hand,
+            s.unit,
+            s.as_of
+          FROM erp_inventory_snapshots s
+          JOIN commodities c ON c.id = s.commodity_id
+          WHERE ${where}
+          ORDER BY s.as_of DESC
+          LIMIT $${params.length}
+          `,
+          params
+        );
+
+        const snapshots = res.rows.map(mapRowToInventorySnapshot);
+        callback(null, { snapshots });
+      } catch (err: any) {
+        callback(err, null);
+      }
+    },
+
+    listCurrentInventory: async (
+      call: ServerUnaryCall<ListCurrentInventoryRequest, ListCurrentInventoryResponse>,
+      callback: sendUnaryData<ListCurrentInventoryResponse>
+    ) => {
+      try {
+        const companyId = call.request.companyId;
+        const res = await pool.query(
+          `
+          SELECT DISTINCT ON (s.commodity_id)
+            concat(s.commodity_id, '_', extract(epoch from s.as_of)) as id,
+            s.company_id,
+            s.commodity_id,
+            c.name as commodity_name,
+            s.on_hand,
+            s.unit,
+            s.as_of
+          FROM erp_inventory_snapshots s
+          JOIN commodities c ON c.id = s.commodity_id
+          WHERE s.company_id = $1
+          ORDER BY s.commodity_id, s.as_of DESC
+          `,
+          [companyId]
+        );
+
+        const snapshots = res.rows.map(mapRowToInventorySnapshot);
+        callback(null, { snapshots });
       } catch (err: any) {
         callback(err, null);
       }

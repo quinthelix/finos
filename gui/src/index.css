@@ -765,6 +765,20 @@ body {
   font-weight: 600;
 }
 
+.inventory-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 /* Chart Panel */
 .chart-panel {
   display: flex;

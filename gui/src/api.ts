@@ -1,5 +1,5 @@
 import log from 'loglevel'
-import type { PurchaseOrder } from './types'
+import type { PurchaseOrder, InventoryItem } from './types'
 
 const API_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8080'
 const COMPANY_ID = import.meta.env.VITE_COMPANY_ID || '00000000-0000-0000-0000-000000000001'
@@ -14,5 +14,16 @@ export async function fetchPurchaseOrders(): Promise<PurchaseOrder[]> {
     throw new Error(`fetch failed ${res.status}`)
   }
   const body = (await res.json()) as { data: PurchaseOrder[] }
+  return body.data || []
+}
+
+export async function fetchInventory(): Promise<InventoryItem[]> {
+  const url = `${API_URL}/api/company/${COMPANY_ID}/inventory`
+  const res = await fetch(url)
+  if (!res.ok) {
+    log.error('Failed to fetch inventory', res.status)
+    throw new Error(`fetch failed ${res.status}`)
+  }
+  const body = (await res.json()) as { data: InventoryItem[] }
   return body.data || []
 }

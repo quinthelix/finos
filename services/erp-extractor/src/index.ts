@@ -17,6 +17,16 @@ export type PurchaseOrder = {
   status: 'confirmed' | 'draft';
 };
 
+export type InventorySnapshot = {
+  id: string;
+  companyId: string;
+  commodityId: string;
+  commodityName: string;
+  onHand: number;
+  unit: string;
+  asOf: string;
+};
+
 type ExtractorOptions = {
   port?: number;
   host?: string;
@@ -43,6 +53,7 @@ export function createExtractor(options: ExtractorOptions = {}) {
 
   const pool = options.pool ?? new Pool({ connectionString: DATABASE_URL });
   let lastSync = new Date(0);
+  let lastInventorySync = new Date(0);
   let pollHandle: NodeJS.Timeout | null = null;
   let grpcServer: { server: import('@grpc/grpc-js').Server; address: string } | null = null;
 
@@ -126,6 +137,70 @@ export function createExtractor(options: ExtractorOptions = {}) {
     }
   }
 
+  async function upsertRawAndStructuredInventory(snapshot: InventorySnapshot) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const payload = JSON.stringify(snapshot);
+      const rawRes = await client.query(
+        `
+        WITH ins AS (
+          INSERT INTO raw_erp_data (company_id, record_type, payload)
+          VALUES ($1, 'inventory_snapshot', $2::jsonb)
+          ON CONFLICT (company_id, record_type, erp_record_id) DO NOTHING
+          RETURNING id
+        ), existing AS (
+          SELECT id FROM ins
+          UNION
+          SELECT id FROM raw_erp_data
+          WHERE company_id = $1 AND record_type = 'inventory_snapshot' AND erp_record_id = $3
+          LIMIT 1
+        )
+        SELECT id FROM existing;
+        `,
+        [COMPANY_ID, payload, snapshot.id]
+      );
+      const rawId = rawRes.rows[0]?.id as number | undefined;
+
+      await client.query(
+        `
+        INSERT INTO erp_inventory_snapshots (
+          company_id, commodity_id, on_hand, unit, as_of, raw_erp_data_id
+        ) VALUES (
+          $1, $2, $3, $4, $5::timestamptz, $6
+        )
+        ON CONFLICT (company_id, commodity_id, as_of) DO NOTHING;
+        `,
+        [COMPANY_ID, snapshot.commodityId, snapshot.onHand, snapshot.unit, snapshot.asOf, rawId ?? null]
+      );
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async function storeInventory(snapshots: InventorySnapshot[]) {
+    for (const s of snapshots) {
+      try {
+        await upsertRawAndStructuredInventory(s);
+      } catch (err) {
+        // snapshot.id is synthetic; log it for debugging
+        logger.error({ err, snapshotId: s.id }, 'failed to store inventory snapshot');
+      }
+    }
+    const newest = snapshots.reduce<Date | null>((latest, s) => {
+      const asOf = new Date(s.asOf);
+      return !latest || asOf > latest ? asOf : latest;
+    }, null);
+    if (newest && newest > lastInventorySync) {
+      lastInventorySync = newest;
+    }
+  }
+
   async function fetchPurchaseOrders(since?: Date): Promise<PurchaseOrder[]> {
     // Pull purchase orders from the simulator (optionally since a timestamp)
     const url = new URL(`/erp/${COMPANY_ID}/purchase-orders`, ERP_BASE_URL);
@@ -140,13 +215,32 @@ export function createExtractor(options: ExtractorOptions = {}) {
     return body.data ?? [];
   }
 
+  async function fetchInventory(since?: Date): Promise<InventorySnapshot[]> {
+    const url = new URL(`/erp/${COMPANY_ID}/inventory`, ERP_BASE_URL);
+    if (since) {
+      url.searchParams.set('since', since.toISOString());
+    }
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`erp-sim inventory fetch failed: ${res.status}`);
+    }
+    const body = (await res.json()) as { data: InventorySnapshot[] };
+    return body.data ?? [];
+  }
+
   async function pollLoop() {
-    // Periodic poll to catch up on any missed or new orders
+    // Periodic poll to catch up on any missed or new orders + inventory
     try {
       const orders = await fetchPurchaseOrders(lastSync);
       if (orders.length > 0) {
         logger.info({ count: orders.length }, 'polled purchase orders');
         await storeOrders(orders);
+      }
+
+      const snapshots = await fetchInventory(lastInventorySync);
+      if (snapshots.length > 0) {
+        logger.info({ count: snapshots.length }, 'polled inventory snapshots');
+        await storeInventory(snapshots);
       }
     } catch (err) {
       logger.warn({ err }, 'polling error');
@@ -175,7 +269,7 @@ export function createExtractor(options: ExtractorOptions = {}) {
     }
   }
 
-  app.get('/health', async () => ({ status: 'ok', lastSync }));
+  app.get('/health', async () => ({ status: 'ok', lastSync, lastInventorySync }));
 
   app.post('/webhooks/erp/purchase-order', async (request, reply) => {
     const body = request.body as PurchaseOrder;
