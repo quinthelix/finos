@@ -1,0 +1,68 @@
+<svg width="32" height="32" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer circle (O) -->
+  <circle 
+    cx="50" 
+    cy="50" 
+    r="46" 
+    fill="none" 
+    stroke="url(#faviconGradient)" 
+    stroke-width="4"
+  />
+  
+  <!-- S-curve divider (like yin-yang) -->
+  <path
+    d="M 50 4 
+       C 50 4, 75 25, 50 50 
+       C 25 75, 50 96, 50 96"
+    fill="none"
+    stroke="url(#faviconGradient)"
+    stroke-width="3"
+    stroke-linecap="round"
+  />
+  
+  <!-- Left side - "f" -->
+  <text
+    x="28"
+    y="58"
+    font-size="28"
+    font-weight="700"
+    font-family="system-ui, -apple-system, sans-serif"
+    fill="#00d4aa"
+  >f</text>
+  
+  <!-- Right side - "n" -->
+  <text
+    x="58"
+    y="58"
+    font-size="28"
+    font-weight="700"
+    font-family="system-ui, -apple-system, sans-serif"
+    fill="#3b82f6"
+  >n</text>
+  
+  <!-- "i" as dots breaking the S - top dot -->
+  <circle cx="50" cy="27" r="4" fill="#00d4aa" />
+  
+  <!-- "i" line segment on S -->
+  <line
+    x1="50"
+    y1="35"
+    x2="50"
+    y2="45"
+    stroke="#ffffff"
+    stroke-width="3"
+    stroke-linecap="round"
+  />
+  
+  <!-- "i" as dots breaking the S - bottom dot -->
+  <circle cx="50" cy="73" r="4" fill="#3b82f6" />
+  
+  <!-- Gradient definition -->
+  <defs>
+    <linearGradient id="faviconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d4aa" />
+      <stop offset="100%" stop-color="#3b82f6" />
+    </linearGradient>
+  </defs>
+</svg>
+

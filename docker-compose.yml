@@ -1,0 +1,169 @@
+services:
+  # Logstash must start FIRST (no GELF logging on itself)
+  logstash:
+    image: docker.elastic.co/logstash/logstash:7.17.15
+    pull_policy: if_not_present
+    ports:
+      - "12201:12201/udp"
+    volumes:
+      - ./config/logstash/pipeline:/usr/share/logstash/pipeline
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9600"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.15
+    pull_policy: if_not_present
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.15
+    pull_policy: if_not_present
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - ~/volumes/finos/db:/var/lib/postgresql/data
+    depends_on:
+      logstash:
+        condition: service_healthy
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://127.0.0.1:12201"
+        tag: "db"
+
+  pgadmin:
+    image: dpage/pgadmin4:9.10
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      db:
+        condition: service_started
+      logstash:
+        condition: service_healthy
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://127.0.0.1:12201"
+        tag: "pgadmin"
+
+  erp-sim:
+    build: ./services/erp-sim
+    environment:
+      PORT: 4001
+      COMPANY_ID: 00000000-0000-0000-0000-000000000001
+      ERP_SIM_TICK_MS: 10000
+      ERP_SIM_BASE_CURRENCY: USD
+    ports:
+      - "4001:4001"
+    depends_on:
+      logstash:
+        condition: service_healthy
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://127.0.0.1:12201"
+        tag: "erp-sim"
+
+  erp-extractor:
+    build: ./services/erp-extractor
+    environment:
+      PORT: 4002
+      ERP_EXTRACTOR_GRPC_PORT: 50051
+      COMPANY_ID: 00000000-0000-0000-0000-000000000001
+      DATABASE_URL: postgres://app:app@db:5432/app
+      ERP_SIM_BASE_URL: http://erp-sim:4001
+      ERP_EXTRACTOR_PUBLIC_URL: http://erp-extractor:4002
+      ERP_EXTRACTOR_POLL_MS: 15000
+    depends_on:
+      db:
+        condition: service_started
+      erp-sim:
+        condition: service_started
+      logstash:
+        condition: service_healthy
+    ports:
+      - "4002:4002"
+      - "50051:50051"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://127.0.0.1:12201"
+        tag: "erp-extractor"
+
+  api-gateway:
+    build: ./services/api-gateway
+    environment:
+      PORT: 8080
+      ERP_EXTRACTOR_GRPC_ADDR: erp-extractor:50051
+      COMPANY_ID: 00000000-0000-0000-0000-000000000001
+    depends_on:
+      erp-extractor:
+        condition: service_started
+      logstash:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://127.0.0.1:12201"
+        tag: "api-gateway"
+
+  gui:
+    build: ./gui
+    environment:
+      VITE_API_GATEWAY_URL: http://api-gateway:8080
+      VITE_COMPANY_ID: 00000000-0000-0000-0000-000000000001
+    depends_on:
+      api-gateway:
+        condition: service_started
+      logstash:
+        condition: service_healthy
+    ports:
+      - "4173:4173"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://127.0.0.1:12201"
+        tag: "gui"
