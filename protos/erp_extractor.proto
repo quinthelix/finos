@@ -19,6 +19,16 @@ message PurchaseOrder {
   string status = 11;
 }
 
+message InventorySnapshot {
+  string id = 1;
+  string company_id = 2;
+  string commodity_id = 3;
+  string commodity_name = 4;
+  double on_hand = 5;
+  string unit = 6;
+  google.protobuf.Timestamp as_of = 7;
+}
+
 message ListPurchaseOrdersRequest {
   string company_id = 1;
   google.protobuf.Timestamp since = 2;
@@ -34,7 +44,27 @@ message GetPurchaseOrderRequest {
   string id = 2;
 }
 
+message ListInventorySnapshotsRequest {
+  string company_id = 1;
+  google.protobuf.Timestamp since = 2;
+  int32 limit = 3;
+}
+
+message ListInventorySnapshotsResponse {
+  repeated InventorySnapshot snapshots = 1;
+}
+
+message ListCurrentInventoryRequest {
+  string company_id = 1;
+}
+
+message ListCurrentInventoryResponse {
+  repeated InventorySnapshot snapshots = 1;
+}
+
 service ErpExtractorService {
   rpc ListPurchaseOrders(ListPurchaseOrdersRequest) returns (ListPurchaseOrdersResponse);
   rpc GetPurchaseOrder(GetPurchaseOrderRequest) returns (PurchaseOrder);
+  rpc ListInventorySnapshots(ListInventorySnapshotsRequest) returns (ListInventorySnapshotsResponse);
+  rpc ListCurrentInventory(ListCurrentInventoryRequest) returns (ListCurrentInventoryResponse);
 }

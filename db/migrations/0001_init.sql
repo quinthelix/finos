@@ -46,10 +46,15 @@ CREATE TABLE IF NOT EXISTS raw_erp_data (
   company_id uuid NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   record_type text NOT NULL,
   payload jsonb NOT NULL,
+  -- Computed ERP record identifier from payload for idempotent ingest / dedupe
+  erp_record_id text GENERATED ALWAYS AS ((payload->>'id')) STORED,
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_raw_erp_data_company_type ON raw_erp_data (company_id, record_type);
+-- Enables ON CONFLICT (company_id, record_type, erp_record_id) in the extractor.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_raw_erp_data_company_type_erp_id
+  ON raw_erp_data (company_id, record_type, erp_record_id);
 
 CREATE TABLE IF NOT EXISTS exposures (
   id bigserial PRIMARY KEY,

@@ -36,6 +36,16 @@ export interface PurchaseOrder {
   status: string;
 }
 
+export interface InventorySnapshot {
+  id: string;
+  companyId: string;
+  commodityId: string;
+  commodityName: string;
+  onHand: number;
+  unit: string;
+  asOf: Date | undefined;
+}
+
 export interface ListPurchaseOrdersRequest {
   companyId: string;
   since: Date | undefined;
@@ -51,6 +61,24 @@ export interface GetPurchaseOrderRequest {
   id: string;
 }
 
+export interface ListInventorySnapshotsRequest {
+  companyId: string;
+  since: Date | undefined;
+  limit: number;
+}
+
+export interface ListInventorySnapshotsResponse {
+  snapshots: InventorySnapshot[];
+}
+
+export interface ListCurrentInventoryRequest {
+  companyId: string;
+}
+
+export interface ListCurrentInventoryResponse {
+  snapshots: InventorySnapshot[];
+}
+
 function createBasePurchaseOrder(): PurchaseOrder {
   return {
     id: "",
@@ -64,6 +92,18 @@ function createBasePurchaseOrder(): PurchaseOrder {
     deliveryDate: undefined,
     createdAt: undefined,
     status: "",
+  };
+}
+
+function createBaseInventorySnapshot(): InventorySnapshot {
+  return {
+    id: "",
+    companyId: "",
+    commodityId: "",
+    commodityName: "",
+    onHand: 0,
+    unit: "",
+    asOf: undefined,
   };
 }
 
@@ -268,6 +308,144 @@ export const PurchaseOrder = {
     message.deliveryDate = object.deliveryDate ?? undefined;
     message.createdAt = object.createdAt ?? undefined;
     message.status = object.status ?? "";
+    return message;
+  },
+};
+
+export const InventorySnapshot = {
+  encode(message: InventorySnapshot, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.id !== "") {
+      writer.uint32(10).string(message.id);
+    }
+    if (message.companyId !== "") {
+      writer.uint32(18).string(message.companyId);
+    }
+    if (message.commodityId !== "") {
+      writer.uint32(26).string(message.commodityId);
+    }
+    if (message.commodityName !== "") {
+      writer.uint32(34).string(message.commodityName);
+    }
+    if (message.onHand !== 0) {
+      writer.uint32(41).double(message.onHand);
+    }
+    if (message.unit !== "") {
+      writer.uint32(50).string(message.unit);
+    }
+    if (message.asOf !== undefined) {
+      Timestamp.encode(toTimestamp(message.asOf), writer.uint32(58).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): InventorySnapshot {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseInventorySnapshot();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+          message.id = reader.string();
+          continue;
+        case 2:
+          if (tag !== 18) {
+            break;
+          }
+          message.companyId = reader.string();
+          continue;
+        case 3:
+          if (tag !== 26) {
+            break;
+          }
+          message.commodityId = reader.string();
+          continue;
+        case 4:
+          if (tag !== 34) {
+            break;
+          }
+          message.commodityName = reader.string();
+          continue;
+        case 5:
+          if (tag !== 41) {
+            break;
+          }
+          message.onHand = reader.double();
+          continue;
+        case 6:
+          if (tag !== 50) {
+            break;
+          }
+          message.unit = reader.string();
+          continue;
+        case 7:
+          if (tag !== 58) {
+            break;
+          }
+          message.asOf = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): InventorySnapshot {
+    return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
+      companyId: isSet(object.companyId) ? globalThis.String(object.companyId) : "",
+      commodityId: isSet(object.commodityId) ? globalThis.String(object.commodityId) : "",
+      commodityName: isSet(object.commodityName) ? globalThis.String(object.commodityName) : "",
+      onHand: isSet(object.onHand) ? globalThis.Number(object.onHand) : 0,
+      unit: isSet(object.unit) ? globalThis.String(object.unit) : "",
+      asOf: isSet(object.asOf) ? fromJsonTimestamp(object.asOf) : undefined,
+    };
+  },
+
+  toJSON(message: InventorySnapshot): unknown {
+    const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
+    if (message.companyId !== "") {
+      obj.companyId = message.companyId;
+    }
+    if (message.commodityId !== "") {
+      obj.commodityId = message.commodityId;
+    }
+    if (message.commodityName !== "") {
+      obj.commodityName = message.commodityName;
+    }
+    if (message.onHand !== 0) {
+      obj.onHand = message.onHand;
+    }
+    if (message.unit !== "") {
+      obj.unit = message.unit;
+    }
+    if (message.asOf !== undefined) {
+      obj.asOf = message.asOf.toISOString();
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<InventorySnapshot>, I>>(base?: I): InventorySnapshot {
+    return InventorySnapshot.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<InventorySnapshot>, I>>(object: I): InventorySnapshot {
+    const message = createBaseInventorySnapshot();
+    message.id = object.id ?? "";
+    message.companyId = object.companyId ?? "";
+    message.commodityId = object.commodityId ?? "";
+    message.commodityName = object.commodityName ?? "";
+    message.onHand = object.onHand ?? 0;
+    message.unit = object.unit ?? "";
+    message.asOf = object.asOf ?? undefined;
     return message;
   },
 };
@@ -496,6 +674,228 @@ export const GetPurchaseOrderRequest = {
   },
 };
 
+function createBaseListInventorySnapshotsRequest(): ListInventorySnapshotsRequest {
+  return { companyId: "", since: undefined, limit: 0 };
+}
+
+export const ListInventorySnapshotsRequest = {
+  encode(message: ListInventorySnapshotsRequest, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.companyId !== "") {
+      writer.uint32(10).string(message.companyId);
+    }
+    if (message.since !== undefined) {
+      Timestamp.encode(toTimestamp(message.since), writer.uint32(18).fork()).ldelim();
+    }
+    if (message.limit !== 0) {
+      writer.uint32(24).int32(message.limit);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): ListInventorySnapshotsRequest {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListInventorySnapshotsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) break;
+          message.companyId = reader.string();
+          continue;
+        case 2:
+          if (tag !== 18) break;
+          message.since = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        case 3:
+          if (tag !== 24) break;
+          message.limit = reader.int32();
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) break;
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListInventorySnapshotsRequest {
+    return {
+      companyId: isSet(object.companyId) ? globalThis.String(object.companyId) : "",
+      since: isSet(object.since) ? fromJsonTimestamp(object.since) : undefined,
+      limit: isSet(object.limit) ? globalThis.Number(object.limit) : 0,
+    };
+  },
+
+  toJSON(message: ListInventorySnapshotsRequest): unknown {
+    const obj: any = {};
+    if (message.companyId !== "") obj.companyId = message.companyId;
+    if (message.since !== undefined) obj.since = message.since.toISOString();
+    if (message.limit !== 0) obj.limit = Math.round(message.limit);
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListInventorySnapshotsRequest>, I>>(base?: I): ListInventorySnapshotsRequest {
+    return ListInventorySnapshotsRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListInventorySnapshotsRequest>, I>>(object: I): ListInventorySnapshotsRequest {
+    const message = createBaseListInventorySnapshotsRequest();
+    message.companyId = object.companyId ?? "";
+    message.since = object.since ?? undefined;
+    message.limit = object.limit ?? 0;
+    return message;
+  },
+};
+
+function createBaseListInventorySnapshotsResponse(): ListInventorySnapshotsResponse {
+  return { snapshots: [] };
+}
+
+export const ListInventorySnapshotsResponse = {
+  encode(message: ListInventorySnapshotsResponse, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    for (const v of message.snapshots) {
+      InventorySnapshot.encode(v!, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): ListInventorySnapshotsResponse {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListInventorySnapshotsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) break;
+          message.snapshots.push(InventorySnapshot.decode(reader, reader.uint32()));
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) break;
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListInventorySnapshotsResponse {
+    return { snapshots: globalThis.Array.isArray(object?.snapshots) ? object.snapshots.map((e: any) => InventorySnapshot.fromJSON(e)) : [] };
+  },
+
+  toJSON(message: ListInventorySnapshotsResponse): unknown {
+    const obj: any = {};
+    if (message.snapshots?.length) obj.snapshots = message.snapshots.map((e) => InventorySnapshot.toJSON(e));
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListInventorySnapshotsResponse>, I>>(base?: I): ListInventorySnapshotsResponse {
+    return ListInventorySnapshotsResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListInventorySnapshotsResponse>, I>>(object: I): ListInventorySnapshotsResponse {
+    const message = createBaseListInventorySnapshotsResponse();
+    message.snapshots = object.snapshots?.map((e) => InventorySnapshot.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function createBaseListCurrentInventoryRequest(): ListCurrentInventoryRequest {
+  return { companyId: "" };
+}
+
+export const ListCurrentInventoryRequest = {
+  encode(message: ListCurrentInventoryRequest, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.companyId !== "") {
+      writer.uint32(10).string(message.companyId);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): ListCurrentInventoryRequest {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListCurrentInventoryRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) break;
+          message.companyId = reader.string();
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) break;
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListCurrentInventoryRequest {
+    return { companyId: isSet(object.companyId) ? globalThis.String(object.companyId) : "" };
+  },
+
+  toJSON(message: ListCurrentInventoryRequest): unknown {
+    const obj: any = {};
+    if (message.companyId !== "") obj.companyId = message.companyId;
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListCurrentInventoryRequest>, I>>(base?: I): ListCurrentInventoryRequest {
+    return ListCurrentInventoryRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListCurrentInventoryRequest>, I>>(object: I): ListCurrentInventoryRequest {
+    const message = createBaseListCurrentInventoryRequest();
+    message.companyId = object.companyId ?? "";
+    return message;
+  },
+};
+
+function createBaseListCurrentInventoryResponse(): ListCurrentInventoryResponse {
+  return { snapshots: [] };
+}
+
+export const ListCurrentInventoryResponse = {
+  encode(message: ListCurrentInventoryResponse, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    for (const v of message.snapshots) {
+      InventorySnapshot.encode(v!, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): ListCurrentInventoryResponse {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListCurrentInventoryResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) break;
+          message.snapshots.push(InventorySnapshot.decode(reader, reader.uint32()));
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) break;
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListCurrentInventoryResponse {
+    return { snapshots: globalThis.Array.isArray(object?.snapshots) ? object.snapshots.map((e: any) => InventorySnapshot.fromJSON(e)) : [] };
+  },
+
+  toJSON(message: ListCurrentInventoryResponse): unknown {
+    const obj: any = {};
+    if (message.snapshots?.length) obj.snapshots = message.snapshots.map((e) => InventorySnapshot.toJSON(e));
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListCurrentInventoryResponse>, I>>(base?: I): ListCurrentInventoryResponse {
+    return ListCurrentInventoryResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListCurrentInventoryResponse>, I>>(object: I): ListCurrentInventoryResponse {
+    const message = createBaseListCurrentInventoryResponse();
+    message.snapshots = object.snapshots?.map((e) => InventorySnapshot.fromPartial(e)) || [];
+    return message;
+  },
+};
+
 export type ErpExtractorServiceService = typeof ErpExtractorServiceService;
 export const ErpExtractorServiceService = {
   listPurchaseOrders: {
@@ -518,11 +918,35 @@ export const ErpExtractorServiceService = {
     responseSerialize: (value: PurchaseOrder) => Buffer.from(PurchaseOrder.encode(value).finish()),
     responseDeserialize: (value: Buffer) => PurchaseOrder.decode(value),
   },
+  listInventorySnapshots: {
+    path: "/erp.ErpExtractorService/ListInventorySnapshots",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: ListInventorySnapshotsRequest) =>
+      Buffer.from(ListInventorySnapshotsRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => ListInventorySnapshotsRequest.decode(value),
+    responseSerialize: (value: ListInventorySnapshotsResponse) =>
+      Buffer.from(ListInventorySnapshotsResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => ListInventorySnapshotsResponse.decode(value),
+  },
+  listCurrentInventory: {
+    path: "/erp.ErpExtractorService/ListCurrentInventory",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: ListCurrentInventoryRequest) =>
+      Buffer.from(ListCurrentInventoryRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => ListCurrentInventoryRequest.decode(value),
+    responseSerialize: (value: ListCurrentInventoryResponse) =>
+      Buffer.from(ListCurrentInventoryResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => ListCurrentInventoryResponse.decode(value),
+  },
 } as const;
 
 export interface ErpExtractorServiceServer extends UntypedServiceImplementation {
   listPurchaseOrders: handleUnaryCall<ListPurchaseOrdersRequest, ListPurchaseOrdersResponse>;
   getPurchaseOrder: handleUnaryCall<GetPurchaseOrderRequest, PurchaseOrder>;
+  listInventorySnapshots: handleUnaryCall<ListInventorySnapshotsRequest, ListInventorySnapshotsResponse>;
+  listCurrentInventory: handleUnaryCall<ListCurrentInventoryRequest, ListCurrentInventoryResponse>;
 }
 
 export interface ErpExtractorServiceClient extends Client {
@@ -555,6 +979,36 @@ export interface ErpExtractorServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: PurchaseOrder) => void,
+  ): ClientUnaryCall;
+  listInventorySnapshots(
+    request: ListInventorySnapshotsRequest,
+    callback: (error: ServiceError | null, response: ListInventorySnapshotsResponse) => void,
+  ): ClientUnaryCall;
+  listInventorySnapshots(
+    request: ListInventorySnapshotsRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ListInventorySnapshotsResponse) => void,
+  ): ClientUnaryCall;
+  listInventorySnapshots(
+    request: ListInventorySnapshotsRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ListInventorySnapshotsResponse) => void,
+  ): ClientUnaryCall;
+  listCurrentInventory(
+    request: ListCurrentInventoryRequest,
+    callback: (error: ServiceError | null, response: ListCurrentInventoryResponse) => void,
+  ): ClientUnaryCall;
+  listCurrentInventory(
+    request: ListCurrentInventoryRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ListCurrentInventoryResponse) => void,
+  ): ClientUnaryCall;
+  listCurrentInventory(
+    request: ListCurrentInventoryRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ListCurrentInventoryResponse) => void,
   ): ClientUnaryCall;
 }
 
