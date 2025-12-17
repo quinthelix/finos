@@ -350,6 +350,12 @@ body {
   overflow: hidden;
 }
 
+.chart-container.split-chart-container {
+  /* SplitChart already has its own padding; keep the outer shell tight */
+  padding: 12px;
+  min-height: 0;
+}
+
 
 .chart-container::before {
   content: '';
@@ -360,12 +366,14 @@ body {
 }
 
 .mini-chart {
-  margin-top: 12px;
+  margin-top: 0;
   padding: 12px 16px;
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-tertiary);
 }
+
+/* (old two-chart overlay layout removed; SplitChart renders a single combined SVG) */
 
 .chart-subheader {
   font-size: 12px;

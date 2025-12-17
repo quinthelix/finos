@@ -5,6 +5,7 @@ import { fetchInventory, fetchInventorySnapshots, fetchPurchaseOrders } from './
 import type { InventoryItem, PurchaseOrder, CommoditySummary } from './types'
 import { LineChart, SERIES_COLORS } from './components/LineChart'
 import type { Point, Series } from './components/LineChart'
+import { SplitChart } from './components/SplitChart'
 
 type NavId = 'commodities' | 'positions' | 'trade'
 
@@ -320,6 +321,8 @@ function CommoditiesView({
   const [pinnedX, setPinnedX] = useState<Date | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
 
+  // SplitChart combines purchases/inventory + price in one panel, with a shared X axis and internal connectors.
+
   // Filter ALL orders by duration first
   const filteredOrders = useMemo(() => {
     const durationDays = DURATIONS.find((d) => d.id === duration)?.days ?? 0
@@ -537,18 +540,32 @@ function CommoditiesView({
     ]
   }, [overlayMode, selectedCommodity, commodityColors, costPoints, inventoryPoints, inventoryByCommodity])
 
+  const mainXDomain = useMemo(() => {
+    // Align price chart X span to match the purchases/inventory chart span for the selected time period.
+    const all: Point[] = overlayMode ? chartSeries.flatMap((s) => s.points) : [...costPoints, ...inventoryPoints]
+    if (!all.length) return undefined
+    const xs = all.map((p) => p.x.getTime())
+    const min = Math.min(...xs)
+    const max = Math.max(...xs)
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined
+    return { min: new Date(min), max: new Date(max) }
+  }, [overlayMode, chartSeries, costPoints, inventoryPoints])
+
   // Unit price series (to observe price-driven vs volume-driven spend)
   const pricePoints: Point[] = useMemo(() => {
     if (overlayMode) return []
+    const barTimes = new Set(costPoints.map((p) => p.x.getTime()))
     return commodityOrders
       .map((o) => ({
         x: new Date(o.createdAt),
         y: o.pricePerUnit,
         // Paint mini-chart dots by the same quality call color.
-        strokeColor: o.qualityColor,
+        // Only apply quality color if there is a cost bar "under" this dot.
+        // If not, keep it in commodity color.
+        strokeColor: barTimes.has(new Date(o.createdAt).getTime()) ? o.qualityColor : undefined,
       }))
       .sort((a, b) => a.x.getTime() - b.x.getTime())
-  }, [commodityOrders, overlayMode])
+  }, [commodityOrders, overlayMode, costPoints])
   const priceSeriesSingle: Series[] = useMemo(() => {
     if (overlayMode) return []
     if (!selectedCommodity) return []
@@ -565,24 +582,7 @@ function CommoditiesView({
     ]
   }, [overlayMode, selectedCommodity, pricePoints, commodityColors])
 
-  const priceSeriesOverlay: Series[] = useMemo(() => {
-    if (!overlayMode) return []
-    return Array.from(overlaySelection).map((commodityId) => {
-      const commodity = commodities.find((c) => c.id === commodityId)
-      const points = filteredOrders
-        .filter((o) => o.commodityId === commodityId)
-        .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit }))
-        .sort((a, b) => a.x.getTime() - b.x.getTime())
-      return {
-        id: `price-${commodityId}`,
-        name: commodity?.name || commodityId,
-        points,
-        color: commodityColors.get(commodityId.toLowerCase()) || '#00d4aa',
-        yAxis: 'left',
-        valueFormat: 'currency',
-      }
-    })
-  }, [overlayMode, overlaySelection, filteredOrders, commodities, commodityColors])
+  // (old arrows overlay removed)
 
   const selectedCommodityData = commodities.find(c => c.id === selectedCommodity)
   const durationLabel = DURATIONS.find(d => d.id === duration)?.label || 'All Time'
@@ -803,35 +803,25 @@ function CommoditiesView({
             </div>
           )}
 
-          <div className="mini-chart">
-              <div className="chart-subheader">
-                Unit price (commodity cost proxy)
-              </div>
-              <LineChart
-                key={`price-${overlayMode ? 'overlay' : selectedCommodity}-${duration}`}
-                series={overlayMode ? priceSeriesOverlay : priceSeriesSingle}
-                height={120}
-                minYZero
-                hideAreas
-              />
-            </div>
-
+          {overlayMode ? (
             <div className="chart-container">
-            {overlayMode ? (
               <LineChart
                 key={`overlay-${duration}-${Array.from(overlaySelection).join(',')}`}
                 series={chartSeries}
+                xDomain={mainXDomain}
               />
-            ) : (
-              <LineChart
-                key={`${selectedCommodity}-${duration}`}
-                series={singleModeSeries}
+            </div>
+          ) : (
+            <div className="chart-container split-chart-container">
+              <SplitChart
+                topSeries={singleModeSeries}
+                bottomSeries={priceSeriesSingle}
+                xDomain={mainXDomain}
                 pinnedX={pinnedX}
-                minYZero
-                hideAreas
+                height={360}
               />
-            )}
-          </div>
+            </div>
+          )}
 
           <table className="data-table">
             <thead>

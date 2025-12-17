@@ -22,6 +22,8 @@ type Props = {
   pinnedX?: Date | null
   minYZero?: boolean
   hideAreas?: boolean
+  xDomain?: { min: Date; max: Date }
+  showXAxis?: boolean
 }
 
 type ScaledPoint = { x: number; y: number; originalX: Date; originalY: number; strokeColor?: string }
@@ -114,7 +116,7 @@ function scaleMultipleSeries(
   seriesList: Series[],
   width: number,
   height: number,
-  opts?: { minYZero?: boolean }
+  opts?: { minYZero?: boolean; xDomain?: { min: Date; max: Date } }
 ): {
   scaledSeries: ScaledSeries[]
   minYLeft: number
@@ -132,8 +134,10 @@ function scaleMultipleSeries(
   }
 
   const xs = allPoints.map((p) => p.x.getTime())
-  const minX = Math.min(...xs)
-  const maxX = Math.max(...xs)
+  const dataMinX = Math.min(...xs)
+  const dataMaxX = Math.max(...xs)
+  const minX = opts?.xDomain ? opts.xDomain.min.getTime() : dataMinX
+  const maxX = opts?.xDomain ? opts.xDomain.max.getTime() : dataMaxX
   const spanX = maxX === minX ? 1 : maxX - minX
 
   const chartWidth = width - PADDING.left - PADDING.right
@@ -190,7 +194,16 @@ function scaleMultipleSeries(
   return { scaledSeries, minYLeft, maxYLeft, minYRight, maxYRight, minX, maxX }
 }
 
-export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinnedX, minYZero = false, hideAreas = false }) => {
+export const LineChart: React.FC<Props> = ({
+  points,
+  series,
+  height = 300,
+  pinnedX,
+  minYZero = false,
+  hideAreas = false,
+  xDomain,
+  showXAxis = true,
+}) => {
   const svgRef = useRef<SVGSVGElement>(null)
   const [isAnimating, setIsAnimating] = useState(true)
   const [hoverX, setHoverX] = useState<number | null>(null)
@@ -226,7 +239,7 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
     effectiveSeries,
     width,
     height,
-    { minYZero }
+    { minYZero, xDomain }
   )
   const chartHeight = height - PADDING.top - PADDING.bottom
   const chartWidth = width - PADDING.left - PADDING.right
@@ -383,14 +396,16 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
       />
 
       {/* X Axis */}
-      <line
-        x1={PADDING.left}
-        y1={height - PADDING.bottom}
-        x2={width - PADDING.right}
-        y2={height - PADDING.bottom}
-        stroke="rgba(255,255,255,0.1)"
-        strokeWidth="1"
-      />
+      {showXAxis && (
+        <line
+          x1={PADDING.left}
+          y1={height - PADDING.bottom}
+          x2={width - PADDING.right}
+          y2={height - PADDING.bottom}
+          stroke="rgba(255,255,255,0.1)"
+          strokeWidth="1"
+        />
+      )}
 
       {/* Y axis grid lines and labels */}
       {yTicks.map((tick, i) => {
@@ -440,19 +455,20 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
         })}
 
       {/* X axis labels */}
-      {xTicks.map((tick, i) => (
-        <text
-          key={`x-${i}`}
-          x={tick.value}
-          y={height - PADDING.bottom + 20}
-          textAnchor="middle"
-          fill="#5c6c7a"
-          fontSize="11"
-          fontFamily="var(--font-sans)"
-        >
-          {tick.label}
-        </text>
-      ))}
+      {showXAxis &&
+        xTicks.map((tick, i) => (
+          <text
+            key={`x-${i}`}
+            x={tick.value}
+            y={height - PADDING.bottom + 20}
+            textAnchor="middle"
+            fill="#5c6c7a"
+            fontSize="11"
+            fontFamily="var(--font-sans)"
+          >
+            {tick.label}
+          </text>
+        ))}
 
       {/* Y axis title */}
       <text
