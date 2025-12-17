@@ -1,8 +1,7 @@
 node_modules/
 dist/
-.vite/
-.cache/
 coverage/
+.nyc_output/
 *.tsbuildinfo
 *.log
 npm-debug.log*
@@ -12,5 +11,9 @@ pnpm-debug.log*
 package-lock.json
 yarn.lock
 pnpm-lock.yaml
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
 .vscode/
 .idea/
