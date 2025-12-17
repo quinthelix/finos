@@ -77,6 +77,8 @@ const PURCHASE_INTERVAL_MAX_DAYS = 90;
 const EXECUTION_LAG_DAYS = 5;
 const DELIVERY_LAG_MIN_DAYS = 25;
 const DELIVERY_LAG_MAX_DAYS = 40;
+const SAFETY_STOCK_DAYS = 45; // aim to keep at least this many days of cover
+const SAFETY_STOCK_MULTIPLIER = 1.2; // target buffer above the baseline cover
 
 type StatusSchedule = {
   executeAt: Date;
@@ -212,8 +214,11 @@ export function createSimServer(options: SimOptions = {}) {
   function createPurchaseOrderForDate(commodity: (typeof commodities)[number], createdAt: Date): PurchaseOrder {
     const deliveryOffset = randomInt(DELIVERY_LAG_MIN_DAYS, DELIVERY_LAG_MAX_DAYS);
     const deliveryDate = addDays(createdAt, deliveryOffset);
-    const monthlyNeed = (consumptionPerDay[commodity.id] ?? 10) * 30;
-    const quantity = randomWithin(monthlyNeed, 0.35);
+    // target ~2 months of cover with buffer to avoid stockout
+    const daily = consumptionPerDay[commodity.id] ?? 10;
+    const targetCoverDays = Math.max(SAFETY_STOCK_DAYS * SAFETY_STOCK_MULTIPLIER, 60);
+    const monthlyNeed = daily * targetCoverDays;
+    const quantity = randomWithin(monthlyNeed, 0.25);
     const pricePerUnit = randomWithin(commodity.basePrice, 0.2);
 
     const po: PurchaseOrder = {
@@ -323,6 +328,18 @@ export function createSimServer(options: SimOptions = {}) {
   }
 
   function advanceInventory(from: Date, to: Date) {
+    // Opportunistically pull purchases forward if we're approaching low stock
+    for (const c of commodities) {
+      const rate = consumptionPerDay[c.id] ?? 0;
+      const current = inventoryByCommodity.get(c.id) ?? 0;
+      const daysCover = rate > 0 ? current / rate : Infinity;
+      if (daysCover < SAFETY_STOCK_DAYS) {
+        const po = createPurchaseOrderForDate(c, from);
+        pushOrders([po], true);
+        nextPurchaseAt.set(c.id, scheduleNextPurchase(from));
+      }
+    }
+
     // Apply steady consumption for the elapsed days (normally stepDays)
     const days = Math.max(
       0,
@@ -427,7 +444,7 @@ export function createSimServer(options: SimOptions = {}) {
       }
       const address = await app.listen({ port, host });
       logger.info(
-        { port, tickMs, stepDays, historyMonths, purchaseProbabilityPerMonth, address },
+        { port, tickMs, stepDays, historyMonths, address },
         'erp-sim started'
       );
       return address;

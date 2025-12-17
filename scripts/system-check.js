@@ -10,8 +10,9 @@
  *      COMPANY_ID (default 00000000-0000-0000-0000-000000000001)
  */
 
-const API_GATEWAY = process.env.API_GATEWAY || 'http://localhost:8080';
-const ERP_SIM = process.env.ERP_SIM || 'http://localhost:4001';
+// Prefer numeric loopback to avoid localhost DNS quirks
+const API_GATEWAY = process.env.API_GATEWAY || 'http://127.0.0.1:8080';
+const ERP_SIM = process.env.ERP_SIM || 'http://127.0.0.1:4001';
 const COMPANY_ID = process.env.COMPANY_ID || '00000000-0000-0000-0000-000000000001';
 
 async function waitFor(url, label, tries = 20, delayMs = 500) {
