@@ -7,6 +7,7 @@ import {
   ListPurchaseOrdersRequest,
   ListPurchaseOrdersResponse,
   PurchaseOrder,
+  PurchaseStatus,
 } from './generated/erp_extractor.js';
 import pino from 'pino';
 
@@ -26,7 +27,7 @@ describe('api-gateway purchase orders route', () => {
     currency: 'USD',
     deliveryDate: new Date(),
     createdAt: new Date(),
-    status: 'confirmed',
+    status: PurchaseStatus.EXECUTED,
   };
 
   beforeAll(async () => {
@@ -66,5 +67,6 @@ describe('api-gateway purchase orders route', () => {
     const body = (await res.json()) as { data: any[] };
     expect(body.data[0].id).toBe('po-123');
     expect(body.data[0].commodityId).toBe('sugar');
+    expect(body.data[0].status).toBe('executed');
   });
 });

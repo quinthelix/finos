@@ -13,7 +13,7 @@ export type PurchaseOrder = {
   currency: string;
   deliveryDate: string;
   createdAt: string;
-  status: 'confirmed' | 'draft';
+  status: 'in_approval' | 'executed' | 'supplied';
 };
 
 export type InventorySnapshot = {
@@ -72,6 +72,19 @@ const DEFAULT_CONSUMPTION_PER_DAY: Record<string, number> = {
   oats: 90,
 };
 
+const PURCHASE_INTERVAL_MIN_DAYS = 60;
+const PURCHASE_INTERVAL_MAX_DAYS = 90;
+const EXECUTION_LAG_DAYS = 5;
+const DELIVERY_LAG_MIN_DAYS = 25;
+const DELIVERY_LAG_MAX_DAYS = 40;
+
+type StatusSchedule = {
+  executeAt: Date;
+  supplyAt: Date;
+};
+
+type PurchaseStatus = 'in_approval' | 'executed' | 'supplied';
+
 type SimOptions = {
   companyId?: string;
   port?: number;
@@ -79,7 +92,6 @@ type SimOptions = {
   tickMs?: number;
   stepDays?: number;
   historyMonths?: number;
-  purchaseProbabilityPerMonth?: number;
   baseCurrency?: string;
   commodities?: typeof DEFAULT_COMMODITIES;
   initialInventory?: Record<string, number>;
@@ -94,16 +106,8 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-function monthKey(d: Date): string {
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
 function startOfMonthUTC(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0));
-}
-
-function endOfMonthUTC(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0, 23, 59, 59, 999));
 }
 
 export function createSimServer(options: SimOptions = {}) {
@@ -113,12 +117,9 @@ export function createSimServer(options: SimOptions = {}) {
   const companyId = options.companyId || process.env.COMPANY_ID || '00000000-0000-0000-0000-000000000001';
   const port = options.port ?? Number(process.env.PORT || 4001);
   const host = options.host ?? '0.0.0.0';
-  const tickMs = options.tickMs ?? Number(process.env.ERP_SIM_TICK_MS || 10000);
-  const stepDays = options.stepDays ?? Number(process.env.ERP_SIM_STEP_DAYS || 7);
-  const historyMonths = options.historyMonths ?? Number(process.env.ERP_SIM_HISTORY_MONTHS || 18);
-  const purchaseProbabilityPerMonth =
-    options.purchaseProbabilityPerMonth ??
-    Number(process.env.ERP_SIM_PURCHASE_PROBABILITY || 0.65);
+  const tickMs = options.tickMs ?? Number(process.env.ERP_SIM_TICK_MS || 600000); // 10 minutes
+  const stepDays = options.stepDays ?? Number(process.env.ERP_SIM_STEP_DAYS || 7); // weekly step
+  const historyMonths = options.historyMonths ?? Number(process.env.ERP_SIM_HISTORY_MONTHS || 24);
   const currency = options.baseCurrency || process.env.ERP_SIM_BASE_CURRENCY || 'USD';
   const commodities = options.commodities || DEFAULT_COMMODITIES;
   const initialInventory = options.initialInventory || DEFAULT_INITIAL_INVENTORY;
@@ -127,6 +128,8 @@ export function createSimServer(options: SimOptions = {}) {
   const purchaseOrders: PurchaseOrder[] = [];
   const inventorySnapshots: InventorySnapshot[] = [];
   const subscriptions = new Set<string>();
+  const statusSchedule = new Map<string, StatusSchedule>();
+  const nextPurchaseAt = new Map<string, Date>();
   let interval: NodeJS.Timeout | null = null;
 
   function randomWithin(base: number, variationPct: number): number {
@@ -134,13 +137,13 @@ export function createSimServer(options: SimOptions = {}) {
     return Math.max(0, base + delta);
   }
 
+  function randomInt(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
   // Simulated clock (UTC) so the GUI sees realistic date ranges.
   // Start at the beginning of the current month, then backfill historyMonths.
   let simNow = startOfMonthUTC(new Date());
-
-  // Track which months we've generated purchase orders for (per commodity).
-  const generatedMonthsByCommodity = new Map<string, Set<string>>();
-  commodities.forEach((c) => generatedMonthsByCommodity.set(c.id, new Set()));
 
   // Track deliveries that should increase inventory at delivery_date.
   type PendingDelivery = {
@@ -181,27 +184,34 @@ export function createSimServer(options: SimOptions = {}) {
   }
 
   function pushOrders(orders: PurchaseOrder[], notify = true) {
-    orders.forEach((po) => purchaseOrders.push(po));
+    orders.forEach((po) => {
+      purchaseOrders.push(po);
+      addStatusSchedule(po);
+    });
     if (notify) {
       orders.forEach((po) => notifySubscribers(po).catch((err) => logger.warn({ err }, 'notification error')));
     }
   }
 
-  function maybeGenerateMonthlyOrder(commodity: (typeof commodities)[number], monthStart: Date) {
-    const key = monthKey(monthStart);
-    const already = generatedMonthsByCommodity.get(commodity.id)!;
-    if (already.has(key)) return null;
-    already.add(key);
+  function scheduleNextPurchase(from: Date): Date {
+    const interval = randomInt(PURCHASE_INTERVAL_MIN_DAYS, PURCHASE_INTERVAL_MAX_DAYS);
+    return addDays(from, interval);
+  }
 
-    if (Math.random() > purchaseProbabilityPerMonth) return null;
+  function addStatusSchedule(po: PurchaseOrder) {
+    // Only track transitions for orders not yet supplied
+    if (po.status === 'supplied') return;
+    const created = new Date(po.createdAt);
+    const delivery = new Date(po.deliveryDate);
+    statusSchedule.set(po.id, {
+      executeAt: addDays(created, EXECUTION_LAG_DAYS),
+      supplyAt: delivery,
+    });
+  }
 
-    const monthEnd = endOfMonthUTC(monthStart);
-    const daySpan = Math.max(1, Math.floor((monthEnd.getTime() - monthStart.getTime()) / (24 * 60 * 60 * 1000)));
-    const orderDayOffset = Math.floor(Math.random() * Math.min(daySpan, 28)); // keep it simple
-    const createdAt = addDays(monthStart, orderDayOffset);
-    const deliveryDate = addDays(createdAt, 30);
-
-    // Quantity sized to roughly cover a month of consumption with some variance
+  function createPurchaseOrderForDate(commodity: (typeof commodities)[number], createdAt: Date): PurchaseOrder {
+    const deliveryOffset = randomInt(DELIVERY_LAG_MIN_DAYS, DELIVERY_LAG_MAX_DAYS);
+    const deliveryDate = addDays(createdAt, deliveryOffset);
     const monthlyNeed = (consumptionPerDay[commodity.id] ?? 10) * 30;
     const quantity = randomWithin(monthlyNeed, 0.35);
     const pricePerUnit = randomWithin(commodity.basePrice, 0.2);
@@ -217,7 +227,7 @@ export function createSimServer(options: SimOptions = {}) {
       currency,
       deliveryDate: deliveryDate.toISOString(),
       createdAt: createdAt.toISOString(),
-      status: 'confirmed',
+      status: 'in_approval',
     };
 
     pendingDeliveries.push({
@@ -228,7 +238,43 @@ export function createSimServer(options: SimOptions = {}) {
       purchaseOrderId: po.id,
     });
 
+    addStatusSchedule(po);
     return po;
+  }
+
+  function generateOrdersUpTo(target: Date, notify = true) {
+    const generated: PurchaseOrder[] = [];
+    for (const commodity of commodities) {
+      let nextAt = nextPurchaseAt.get(commodity.id);
+      if (!nextAt) {
+        nextAt = addDays(simNow, randomInt(5, 25));
+      }
+      while (nextAt.getTime() <= target.getTime()) {
+        const po = createPurchaseOrderForDate(commodity, nextAt);
+        generated.push(po);
+        nextAt = scheduleNextPurchase(nextAt);
+      }
+      nextPurchaseAt.set(commodity.id, nextAt);
+    }
+    if (generated.length > 0) {
+      // Maintain chronological order for downstream consumers
+      generated.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      pushOrders(generated, notify);
+    }
+  }
+
+  function updateStatuses(to: Date) {
+    for (const po of purchaseOrders) {
+      const schedule = statusSchedule.get(po.id);
+      if (!schedule) continue;
+      if (po.status === 'in_approval' && to.getTime() >= schedule.executeAt.getTime()) {
+        po.status = 'executed';
+      }
+      if (to.getTime() >= schedule.supplyAt.getTime()) {
+        po.status = 'supplied';
+        statusSchedule.delete(po.id);
+      }
+    }
   }
 
   function recordWeeklyInventory(asOf: Date, inventoryByCommodity: Map<string, number>) {
@@ -248,10 +294,10 @@ export function createSimServer(options: SimOptions = {}) {
   }
 
   function bootstrapHistory(months: number) {
-    // Backfill purchase orders (monthly-ish) + weekly inventory snapshots for a realistic chart.
-    const nowMonthStart = startOfMonthUTC(new Date());
-    const historyStart = addDays(nowMonthStart, -months * 30);
-    simNow = nowMonthStart;
+    // Backfill purchase orders (every 2-3 months) + weekly inventory snapshots across history.
+    const nowUtc = new Date();
+    const historyStart = addDays(startOfMonthUTC(nowUtc), -months * 30);
+    simNow = historyStart;
 
     // Reset inventory state to the starting values at the beginning of history
     inventoryByCommodity.clear();
@@ -260,51 +306,19 @@ export function createSimServer(options: SimOptions = {}) {
       inventoryByCommodity.set(c.id, init);
     }
 
-    // Generate monthly purchase orders across history window
-    const generated: PurchaseOrder[] = [];
-    for (let m = months; m >= 0; m -= 1) {
-      const monthStart = addDays(nowMonthStart, -m * 30);
-      const monthStartUTC = startOfMonthUTC(monthStart);
-      for (const commodity of commodities) {
-        const po = maybeGenerateMonthlyOrder(commodity, monthStartUTC);
-        if (po) generated.push(po);
-      }
-    }
-    // Keep in chronological order
-    generated.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-    pushOrders(generated, false);
+    // Seed next purchase dates near the history start
+    commodities.forEach((c) => {
+      nextPurchaseAt.set(c.id, addDays(historyStart, randomInt(5, 25)));
+    });
 
-    // Weekly inventory readouts from historyStart to simNow
-    let t = startOfMonthUTC(historyStart);
-    // Record the initial inventory state BEFORE any consumption is applied,
-    // so the first visible data point reflects the true starting level.
-    recordWeeklyInventory(t, inventoryByCommodity);
-    while (t.getTime() <= simNow.getTime()) {
-      const next = addDays(t, stepDays);
-
-      // Apply steady consumption over the step
-      for (const c of commodities) {
-        const rate = consumptionPerDay[c.id] ?? 0;
-        const delta = rate * stepDays;
-        const current = inventoryByCommodity.get(c.id) ?? 0;
-        inventoryByCommodity.set(c.id, Math.max(0, current - delta));
-      }
-
-      // Apply any deliveries that have arrived by 'next'
-      const remaining: PendingDelivery[] = [];
-      for (const d of pendingDeliveries) {
-        if (d.deliveryDate.getTime() <= next.getTime()) {
-          const current = inventoryByCommodity.get(d.commodityId) ?? 0;
-          inventoryByCommodity.set(d.commodityId, current + d.quantity);
-        } else {
-          remaining.push(d);
-        }
-      }
-      pendingDeliveries.length = 0;
-      remaining.forEach((d) => pendingDeliveries.push(d));
-
-      recordWeeklyInventory(next, inventoryByCommodity);
-      t = next;
+    // Walk forward in simulated time, generating orders and inventory snapshots
+    recordWeeklyInventory(simNow, inventoryByCommodity);
+    while (simNow.getTime() < nowUtc.getTime()) {
+      const nextStep = addDays(simNow, stepDays);
+      generateOrdersUpTo(nextStep, false);
+      advanceInventory(simNow, nextStep);
+      updateStatuses(nextStep);
+      simNow = nextStep;
     }
   }
 
@@ -400,29 +414,13 @@ export function createSimServer(options: SimOptions = {}) {
       }
       if (!options.disableGenerator) {
         interval = setInterval(() => {
-          // Advance simulated time by stepDays and generate at-most-one PO per commodity per month.
+          // Advance simulated time by stepDays and generate purchase orders on their cadence.
           const before = simNow;
           const after = addDays(simNow, stepDays);
-
-          // If we crossed into a new month, generate that month's orders (probabilistic).
-          const beforeMonth = monthKey(before);
-          const afterMonth = monthKey(after);
-          if (beforeMonth !== afterMonth) {
-            const monthStart = startOfMonthUTC(after);
-            const generated: PurchaseOrder[] = [];
-            for (const commodity of commodities) {
-              const po = maybeGenerateMonthlyOrder(commodity, monthStart);
-              if (po) generated.push(po);
-            }
-            if (generated.length > 0) {
-              generated.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-              pushOrders(generated, true);
-            }
-          }
-
-          // Inventory is updated every tick (weekly) and snapshots are appended, so downstream
-          // services can continue to ingest new inventory readouts after bootstrap.
+          generateOrdersUpTo(after, true);
+          // Inventory is updated every tick (weekly) and snapshots are appended.
           advanceInventory(before, after);
+          updateStatuses(after);
 
           simNow = after;
         }, tickMs);

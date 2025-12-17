@@ -10,18 +10,17 @@ Place SQL migrations in `db/migrations/` with numeric prefixes (e.g., `0001_init
 
 ### Running Migrations Automatically
 
-Use the migration runner script to apply all pending migrations:
+Use the re-init script to fully reset the local DB, run all migrations, and seed demo data:
 
 ```bash
 docker compose up -d db
-./db/migrate.sh
+./db/re-init.sh
 ```
 
 The script:
-- Creates a `schema_migrations` table to track applied migrations
-- Runs each `.sql` file in sorted order
-- Skips already-applied migrations
-- Records each successful migration
+- Drops & recreates the `app` database
+- Runs every `.sql` file in `db/migrations/` (sorted)
+- Runs `db/dev_seed.sql`
 
 ### Running a Single Migration Manually
 
@@ -37,12 +36,10 @@ cat db/migrations/0001_init.sql | docker compose exec -T db psql -U app -d app
 
 ## Resetting local DB quickly
 
-Drop and recreate the public schema, then rerun migrations and seeds:
+Reset everything (drop DB, rerun migrations, reseed):
 
 ```bash
-docker compose exec -T db psql -U app -d app -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-./db/migrate.sh
-cat db/dev_seed.sql | docker compose exec -T db psql -U app -d app
+./db/re-init.sh
 ```
 
 ## GUI access to Postgres (local)

@@ -5,6 +5,13 @@ package erp;
 import "google/protobuf/timestamp.proto";
 import "common.proto";
 
+enum PurchaseStatus {
+  PURCHASE_STATUS_UNSPECIFIED = 0;
+  IN_APPROVAL = 1;
+  EXECUTED = 2;
+  SUPPLIED = 3;
+}
+
 message PurchaseOrder {
   string id = 1;
   string company_id = 2;
@@ -16,7 +23,7 @@ message PurchaseOrder {
   string currency = 8;
   google.protobuf.Timestamp delivery_date = 9;
   google.protobuf.Timestamp created_at = 10;
-  string status = 11;
+  PurchaseStatus status = 11;
 }
 
 message InventorySnapshot {

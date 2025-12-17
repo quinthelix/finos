@@ -22,6 +22,51 @@ import { Timestamp } from "./google/protobuf/timestamp";
 
 export const protobufPackage = "erp";
 
+export enum PurchaseStatus {
+  PURCHASE_STATUS_UNSPECIFIED = 0,
+  IN_APPROVAL = 1,
+  EXECUTED = 2,
+  SUPPLIED = 3,
+  UNRECOGNIZED = -1,
+}
+
+export function purchaseStatusFromJSON(object: any): PurchaseStatus {
+  switch (object) {
+    case 0:
+    case "PURCHASE_STATUS_UNSPECIFIED":
+      return PurchaseStatus.PURCHASE_STATUS_UNSPECIFIED;
+    case 1:
+    case "IN_APPROVAL":
+      return PurchaseStatus.IN_APPROVAL;
+    case 2:
+    case "EXECUTED":
+      return PurchaseStatus.EXECUTED;
+    case 3:
+    case "SUPPLIED":
+      return PurchaseStatus.SUPPLIED;
+    case -1:
+    case "UNRECOGNIZED":
+    default:
+      return PurchaseStatus.UNRECOGNIZED;
+  }
+}
+
+export function purchaseStatusToJSON(object: PurchaseStatus): string {
+  switch (object) {
+    case PurchaseStatus.PURCHASE_STATUS_UNSPECIFIED:
+      return "PURCHASE_STATUS_UNSPECIFIED";
+    case PurchaseStatus.IN_APPROVAL:
+      return "IN_APPROVAL";
+    case PurchaseStatus.EXECUTED:
+      return "EXECUTED";
+    case PurchaseStatus.SUPPLIED:
+      return "SUPPLIED";
+    case PurchaseStatus.UNRECOGNIZED:
+    default:
+      return "UNRECOGNIZED";
+  }
+}
+
 export interface PurchaseOrder {
   id: string;
   companyId: string;
@@ -33,7 +78,7 @@ export interface PurchaseOrder {
   currency: string;
   deliveryDate: Date | undefined;
   createdAt: Date | undefined;
-  status: string;
+  status: PurchaseStatus;
 }
 
 export interface InventorySnapshot {
@@ -91,19 +136,7 @@ function createBasePurchaseOrder(): PurchaseOrder {
     currency: "",
     deliveryDate: undefined,
     createdAt: undefined,
-    status: "",
-  };
-}
-
-function createBaseInventorySnapshot(): InventorySnapshot {
-  return {
-    id: "",
-    companyId: "",
-    commodityId: "",
-    commodityName: "",
-    onHand: 0,
-    unit: "",
-    asOf: undefined,
+    status: 0,
   };
 }
 
@@ -139,8 +172,8 @@ export const PurchaseOrder = {
     if (message.createdAt !== undefined) {
       Timestamp.encode(toTimestamp(message.createdAt), writer.uint32(82).fork()).ldelim();
     }
-    if (message.status !== "") {
-      writer.uint32(90).string(message.status);
+    if (message.status !== 0) {
+      writer.uint32(88).int32(message.status);
     }
     return writer;
   },
@@ -223,11 +256,11 @@ export const PurchaseOrder = {
           message.createdAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         case 11:
-          if (tag !== 90) {
+          if (tag !== 88) {
             break;
           }
 
-          message.status = reader.string();
+          message.status = reader.int32() as any;
           continue;
       }
       if ((tag & 7) === 4 || tag === 0) {
@@ -250,7 +283,7 @@ export const PurchaseOrder = {
       currency: isSet(object.currency) ? globalThis.String(object.currency) : "",
       deliveryDate: isSet(object.deliveryDate) ? fromJsonTimestamp(object.deliveryDate) : undefined,
       createdAt: isSet(object.createdAt) ? fromJsonTimestamp(object.createdAt) : undefined,
-      status: isSet(object.status) ? globalThis.String(object.status) : "",
+      status: isSet(object.status) ? purchaseStatusFromJSON(object.status) : 0,
     };
   },
 
@@ -286,8 +319,8 @@ export const PurchaseOrder = {
     if (message.createdAt !== undefined) {
       obj.createdAt = message.createdAt.toISOString();
     }
-    if (message.status !== "") {
-      obj.status = message.status;
+    if (message.status !== 0) {
+      obj.status = purchaseStatusToJSON(message.status);
     }
     return obj;
   },
@@ -307,10 +340,14 @@ export const PurchaseOrder = {
     message.currency = object.currency ?? "";
     message.deliveryDate = object.deliveryDate ?? undefined;
     message.createdAt = object.createdAt ?? undefined;
-    message.status = object.status ?? "";
+    message.status = object.status ?? 0;
     return message;
   },
 };
+
+function createBaseInventorySnapshot(): InventorySnapshot {
+  return { id: "", companyId: "", commodityId: "", commodityName: "", onHand: 0, unit: "", asOf: undefined };
+}
 
 export const InventorySnapshot = {
   encode(message: InventorySnapshot, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
@@ -349,42 +386,49 @@ export const InventorySnapshot = {
           if (tag !== 10) {
             break;
           }
+
           message.id = reader.string();
           continue;
         case 2:
           if (tag !== 18) {
             break;
           }
+
           message.companyId = reader.string();
           continue;
         case 3:
           if (tag !== 26) {
             break;
           }
+
           message.commodityId = reader.string();
           continue;
         case 4:
           if (tag !== 34) {
             break;
           }
+
           message.commodityName = reader.string();
           continue;
         case 5:
           if (tag !== 41) {
             break;
           }
+
           message.onHand = reader.double();
           continue;
         case 6:
           if (tag !== 50) {
             break;
           }
+
           message.unit = reader.string();
           continue;
         case 7:
           if (tag !== 58) {
             break;
           }
+
           message.asOf = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
       }
@@ -700,19 +744,30 @@ export const ListInventorySnapshotsRequest = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          if (tag !== 10) break;
+          if (tag !== 10) {
+            break;
+          }
+
           message.companyId = reader.string();
           continue;
         case 2:
-          if (tag !== 18) break;
+          if (tag !== 18) {
+            break;
+          }
+
           message.since = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         case 3:
-          if (tag !== 24) break;
+          if (tag !== 24) {
+            break;
+          }
+
           message.limit = reader.int32();
           continue;
       }
-      if ((tag & 7) === 4 || tag === 0) break;
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
       reader.skipType(tag & 7);
     }
     return message;
@@ -728,16 +783,24 @@ export const ListInventorySnapshotsRequest = {
 
   toJSON(message: ListInventorySnapshotsRequest): unknown {
     const obj: any = {};
-    if (message.companyId !== "") obj.companyId = message.companyId;
-    if (message.since !== undefined) obj.since = message.since.toISOString();
-    if (message.limit !== 0) obj.limit = Math.round(message.limit);
+    if (message.companyId !== "") {
+      obj.companyId = message.companyId;
+    }
+    if (message.since !== undefined) {
+      obj.since = message.since.toISOString();
+    }
+    if (message.limit !== 0) {
+      obj.limit = Math.round(message.limit);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<ListInventorySnapshotsRequest>, I>>(base?: I): ListInventorySnapshotsRequest {
     return ListInventorySnapshotsRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ListInventorySnapshotsRequest>, I>>(object: I): ListInventorySnapshotsRequest {
+  fromPartial<I extends Exact<DeepPartial<ListInventorySnapshotsRequest>, I>>(
+    object: I,
+  ): ListInventorySnapshotsRequest {
     const message = createBaseListInventorySnapshotsRequest();
     message.companyId = object.companyId ?? "";
     message.since = object.since ?? undefined;
@@ -766,30 +829,43 @@ export const ListInventorySnapshotsResponse = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          if (tag !== 10) break;
+          if (tag !== 10) {
+            break;
+          }
+
           message.snapshots.push(InventorySnapshot.decode(reader, reader.uint32()));
           continue;
       }
-      if ((tag & 7) === 4 || tag === 0) break;
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
       reader.skipType(tag & 7);
     }
     return message;
   },
 
   fromJSON(object: any): ListInventorySnapshotsResponse {
-    return { snapshots: globalThis.Array.isArray(object?.snapshots) ? object.snapshots.map((e: any) => InventorySnapshot.fromJSON(e)) : [] };
+    return {
+      snapshots: globalThis.Array.isArray(object?.snapshots)
+        ? object.snapshots.map((e: any) => InventorySnapshot.fromJSON(e))
+        : [],
+    };
   },
 
   toJSON(message: ListInventorySnapshotsResponse): unknown {
     const obj: any = {};
-    if (message.snapshots?.length) obj.snapshots = message.snapshots.map((e) => InventorySnapshot.toJSON(e));
+    if (message.snapshots?.length) {
+      obj.snapshots = message.snapshots.map((e) => InventorySnapshot.toJSON(e));
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<ListInventorySnapshotsResponse>, I>>(base?: I): ListInventorySnapshotsResponse {
     return ListInventorySnapshotsResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ListInventorySnapshotsResponse>, I>>(object: I): ListInventorySnapshotsResponse {
+  fromPartial<I extends Exact<DeepPartial<ListInventorySnapshotsResponse>, I>>(
+    object: I,
+  ): ListInventorySnapshotsResponse {
     const message = createBaseListInventorySnapshotsResponse();
     message.snapshots = object.snapshots?.map((e) => InventorySnapshot.fromPartial(e)) || [];
     return message;
@@ -816,11 +892,16 @@ export const ListCurrentInventoryRequest = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          if (tag !== 10) break;
+          if (tag !== 10) {
+            break;
+          }
+
           message.companyId = reader.string();
           continue;
       }
-      if ((tag & 7) === 4 || tag === 0) break;
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
       reader.skipType(tag & 7);
     }
     return message;
@@ -832,7 +913,9 @@ export const ListCurrentInventoryRequest = {
 
   toJSON(message: ListCurrentInventoryRequest): unknown {
     const obj: any = {};
-    if (message.companyId !== "") obj.companyId = message.companyId;
+    if (message.companyId !== "") {
+      obj.companyId = message.companyId;
+    }
     return obj;
   },
 
@@ -866,23 +949,34 @@ export const ListCurrentInventoryResponse = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          if (tag !== 10) break;
+          if (tag !== 10) {
+            break;
+          }
+
           message.snapshots.push(InventorySnapshot.decode(reader, reader.uint32()));
           continue;
       }
-      if ((tag & 7) === 4 || tag === 0) break;
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
       reader.skipType(tag & 7);
     }
     return message;
   },
 
   fromJSON(object: any): ListCurrentInventoryResponse {
-    return { snapshots: globalThis.Array.isArray(object?.snapshots) ? object.snapshots.map((e: any) => InventorySnapshot.fromJSON(e)) : [] };
+    return {
+      snapshots: globalThis.Array.isArray(object?.snapshots)
+        ? object.snapshots.map((e: any) => InventorySnapshot.fromJSON(e))
+        : [],
+    };
   },
 
   toJSON(message: ListCurrentInventoryResponse): unknown {
     const obj: any = {};
-    if (message.snapshots?.length) obj.snapshots = message.snapshots.map((e) => InventorySnapshot.toJSON(e));
+    if (message.snapshots?.length) {
+      obj.snapshots = message.snapshots.map((e) => InventorySnapshot.toJSON(e));
+    }
     return obj;
   },
 

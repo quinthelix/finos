@@ -27,3 +27,15 @@ export async function fetchInventory(): Promise<InventoryItem[]> {
   const body = (await res.json()) as { data: InventoryItem[] }
   return body.data || []
 }
+
+export async function fetchInventorySnapshots(): Promise<InventoryItem[]> {
+  // Weekly snapshots can be large; default limit is bounded server-side too.
+  const url = `${API_URL}/api/company/${COMPANY_ID}/inventory-snapshots?limit=2000`
+  const res = await fetch(url)
+  if (!res.ok) {
+    log.error('Failed to fetch inventory snapshots', res.status)
+    throw new Error(`fetch failed ${res.status}`)
+  }
+  const body = (await res.json()) as { data: InventoryItem[] }
+  return body.data || []
+}

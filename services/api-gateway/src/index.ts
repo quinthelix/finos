@@ -6,6 +6,7 @@ import {
   ListPurchaseOrdersRequest,
   PurchaseOrder,
   ListCurrentInventoryRequest,
+  ListInventorySnapshotsRequest,
   InventorySnapshot,
 } from './generated/erp_extractor.js';
 
@@ -78,6 +79,43 @@ app.get('/api/company/:companyId/inventory', async (request, reply) => {
 
   const res = await new Promise<{ snapshots: InventorySnapshot[] }>((resolve, reject) => {
     client.listCurrentInventory(req, (err, response) => {
+      if (err || !response) return reject(err || new Error('no response'));
+      resolve(response);
+    });
+  });
+
+  const data = res.snapshots.map((s) => ({
+    id: s.id,
+    companyId: s.companyId,
+    commodityId: s.commodityId,
+    commodityName: s.commodityName,
+    onHand: s.onHand,
+    unit: s.unit,
+    asOf: s.asOf?.toISOString(),
+  }));
+
+  return reply.send({ data });
+});
+
+app.get('/api/company/:companyId/inventory-snapshots', async (request, reply) => {
+  const { companyId } = request.params as { companyId: string };
+  const { limit, since } = request.query as { limit?: string; since?: string };
+
+  const parsedLimit = limit ? parseInt(limit, 10) : NaN;
+  const effectiveLimit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 5000)) : 2000;
+  const sinceDate = since ? new Date(since) : undefined;
+
+  const req: ListInventorySnapshotsRequest = {
+    companyId: companyId || defaultCompanyId,
+    limit: effectiveLimit,
+    since: sinceDate && !Number.isNaN(sinceDate.getTime()) ? sinceDate : undefined,
+  };
+
+  const client = erpClient;
+  if (!client) throw new Error('ERP client not initialized');
+
+  const res = await new Promise<{ snapshots: InventorySnapshot[] }>((resolve, reject) => {
+    client.listInventorySnapshots(req, (err, response) => {
       if (err || !response) return reject(err || new Error('no response'));
       resolve(response);
     });

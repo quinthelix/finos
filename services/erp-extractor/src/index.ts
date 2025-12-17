@@ -14,7 +14,7 @@ export type PurchaseOrder = {
   currency: string;
   deliveryDate: string;
   createdAt: string;
-  status: 'confirmed' | 'draft';
+  status: 'in_approval' | 'executed' | 'supplied';
 };
 
 export type InventorySnapshot = {

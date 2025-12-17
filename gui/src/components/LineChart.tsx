@@ -7,12 +7,17 @@ export type Series = {
   name: string
   points: Point[]
   color: string
+  dash?: string
+  yAxis?: 'left' | 'right'
+  unit?: string
+  valueFormat?: 'currency' | 'number'
 }
 
 type Props = {
   points?: Point[]  // Single series (backward compatible)
   series?: Series[] // Multiple series for overlay mode
   height?: number
+  pinnedX?: Date | null
 }
 
 type ScaledPoint = { x: number; y: number; originalX: Date; originalY: number }
@@ -21,6 +26,10 @@ type ScaledSeries = {
   id: string
   name: string
   color: string
+  dash?: string
+  yAxis: 'left' | 'right'
+  unit?: string
+  valueFormat: 'currency' | 'number'
   pathD: string
   scaledPoints: ScaledPoint[]
 }
@@ -49,6 +58,12 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(0)}`
 }
 
+function formatNumber(value: number): string {
+  if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}K`
+  return value.toFixed(0)
+}
+
 function formatDate(date: Date, range: number): string {
   if (range <= 30) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -72,40 +87,81 @@ function createPath(scaledPoints: ScaledPoint[]): string {
   return pathD
 }
 
+function interpolateAt(points: Point[], x: Date): number | null {
+  if (!points.length) return null
+  const sorted = points.slice().sort((a, b) => a.x.getTime() - b.x.getTime())
+  const t = x.getTime()
+
+  const tFirst = sorted[0].x.getTime()
+  const tLast = sorted[sorted.length - 1].x.getTime()
+  if (t <= tFirst) return sorted[0].y
+  if (t >= tLast) return sorted[sorted.length - 1].y
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const t0 = sorted[i].x.getTime()
+    const t1 = sorted[i + 1].x.getTime()
+    if (t >= t0 && t <= t1) {
+      const ratio = t1 === t0 ? 0 : (t - t0) / (t1 - t0)
+      return sorted[i].y + ratio * (sorted[i + 1].y - sorted[i].y)
+    }
+  }
+  return null
+}
+
 function scaleMultipleSeries(
   seriesList: Series[],
   width: number,
   height: number
 ): {
   scaledSeries: ScaledSeries[]
-  minY: number
-  maxY: number
+  minYLeft: number
+  maxYLeft: number
+  minYRight: number
+  maxYRight: number
   minX: number
   maxX: number
 } {
-  // Collect all points to find global min/max
-  const allPoints = seriesList.flatMap(s => s.points)
+  // Global X range, per-axis Y ranges
+  const allPoints = seriesList.flatMap((s) => s.points)
   
   if (allPoints.length === 0) {
-    return { scaledSeries: [], minY: 0, maxY: 0, minX: 0, maxX: 0 }
+    return { scaledSeries: [], minYLeft: 0, maxYLeft: 0, minYRight: 0, maxYRight: 0, minX: 0, maxX: 0 }
   }
 
   const xs = allPoints.map((p) => p.x.getTime())
-  const ys = allPoints.map((p) => p.y)
   const minX = Math.min(...xs)
   const maxX = Math.max(...xs)
-  const dataMinY = Math.min(...ys)
-  const dataMaxY = Math.max(...ys)
-  const minY = dataMinY * 0.9
-  const maxY = dataMaxY * 1.1
   const spanX = maxX === minX ? 1 : maxX - minX
-  const spanY = maxY === minY ? 1 : maxY - minY
 
   const chartWidth = width - PADDING.left - PADDING.right
   const chartHeight = height - PADDING.top - PADDING.bottom
 
-  const scaledSeries = seriesList.map(series => {
+  const leftYs = seriesList
+    .filter((s) => (s.yAxis ?? 'left') === 'left')
+    .flatMap((s) => s.points.map((p) => p.y))
+  const rightYs = seriesList
+    .filter((s) => (s.yAxis ?? 'left') === 'right')
+    .flatMap((s) => s.points.map((p) => p.y))
+
+  const dataMinYLeft = leftYs.length ? Math.min(...leftYs) : 0
+  const dataMaxYLeft = leftYs.length ? Math.max(...leftYs) : 0
+  const minYLeft = leftYs.length ? dataMinYLeft * 0.9 : 0
+  const maxYLeft = leftYs.length ? dataMaxYLeft * 1.1 : 0
+  const spanYLeft = maxYLeft === minYLeft ? 1 : maxYLeft - minYLeft
+
+  const dataMinYRight = rightYs.length ? Math.min(...rightYs) : 0
+  const dataMaxYRight = rightYs.length ? Math.max(...rightYs) : 0
+  const minYRight = rightYs.length ? dataMinYRight * 0.9 : 0
+  const maxYRight = rightYs.length ? dataMaxYRight * 1.1 : 0
+  const spanYRight = maxYRight === minYRight ? 1 : maxYRight - minYRight
+
+  const scaledSeries = seriesList.map((series) => {
+    const yAxis: 'left' | 'right' = series.yAxis ?? 'left'
+    const minY = yAxis === 'right' ? minYRight : minYLeft
+    const spanY = yAxis === 'right' ? spanYRight : spanYLeft
+
     const scaledPoints = series.points
+      .slice()
       .sort((a, b) => a.x.getTime() - b.x.getTime())
       .map((p) => {
         const px = PADDING.left + ((p.x.getTime() - minX) / spanX) * chartWidth
@@ -117,15 +173,19 @@ function scaleMultipleSeries(
       id: series.id,
       name: series.name,
       color: series.color,
+      dash: series.dash,
+      yAxis,
+      unit: series.unit,
+      valueFormat: series.valueFormat ?? (yAxis === 'left' ? 'currency' : 'number'),
       pathD: createPath(scaledPoints),
       scaledPoints
     }
   })
 
-  return { scaledSeries, minY, maxY, minX, maxX }
+  return { scaledSeries, minYLeft, maxYLeft, minYRight, maxYRight, minX, maxX }
 }
 
-export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => {
+export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinnedX }) => {
   const width = 700
   const svgRef = useRef<SVGSVGElement>(null)
   const [isAnimating, setIsAnimating] = useState(true)
@@ -136,12 +196,14 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => 
     id: 'default',
     name: 'Value',
     points: points,
-    color: '#00d4aa'
+    color: '#00d4aa',
+    yAxis: 'left',
+    valueFormat: 'currency',
   }] : [])
 
   const isOverlayMode = effectiveSeries.length > 1
   
-  const { scaledSeries, minY, maxY, minX, maxX } = scaleMultipleSeries(effectiveSeries, width, height)
+  const { scaledSeries, minYLeft, maxYLeft, minYRight, maxYRight, minX, maxX } = scaleMultipleSeries(effectiveSeries, width, height)
   const chartHeight = height - PADDING.top - PADDING.bottom
   const chartWidth = width - PADDING.left - PADDING.right
 
@@ -153,26 +215,42 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => 
 
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current) return
-    const rect = svgRef.current.getBoundingClientRect()
-    const x = ((e.clientX - rect.left) / rect.width) * width
-    
-    if (x >= PADDING.left && x <= width - PADDING.right) {
-      setHoverX(x)
-    } else {
-      setHoverX(null)
-    }
-  }, [width])
+    // Use the SVG CTM to map screen coords -> SVG coords.
+    // This stays accurate even if the SVG is scaled with a different aspect ratio.
+    const ctm = svgRef.current.getScreenCTM()
+    if (!ctm) return
+    const inv = ctm.inverse()
+    const pt = svgRef.current.createSVGPoint()
+    pt.x = e.clientX
+    pt.y = e.clientY
+    const svgPt = pt.matrixTransform(inv)
+
+    const x = svgPt.x
+    const y = svgPt.y
+
+    const inX = x >= PADDING.left && x <= width - PADDING.right
+    const inY = y >= PADDING.top && y <= height - PADDING.bottom
+    setHoverX(inX && inY ? x : null)
+  }, [width, height])
 
   const handleMouseLeave = useCallback(() => {
     setHoverX(null)
   }, [])
 
-  // Generate Y axis ticks
+  // Generate Y axis ticks (left)
   const yTicks: number[] = []
   const yTickCount = 5
-  if (maxY > minY) {
+  if (maxYLeft > minYLeft) {
     for (let i = 0; i <= yTickCount; i++) {
-      yTicks.push(minY + ((maxY - minY) / yTickCount) * i)
+      yTicks.push(minYLeft + ((maxYLeft - minYLeft) / yTickCount) * i)
+    }
+  }
+
+  const hasRightAxis = scaledSeries.some((s) => s.yAxis === 'right')
+  const yTicksRight: number[] = []
+  if (hasRightAxis && maxYRight > minYRight) {
+    for (let i = 0; i <= yTickCount; i++) {
+      yTicksRight.push(minYRight + ((maxYRight - minYRight) / yTickCount) * i)
     }
   }
 
@@ -192,19 +270,27 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => 
     }
   }
 
-  // Find hovered points for each series
-  const hoveredPoints = hoverX !== null ? scaledSeries.map(s => {
-    let closest = s.scaledPoints[0]
-    let closestDist = Infinity
-    s.scaledPoints.forEach(p => {
-      const dist = Math.abs(p.x - hoverX)
-      if (dist < closestDist) {
-        closestDist = dist
-        closest = p
-      }
-    })
-    return { series: s, point: closest }
-  }).filter(h => h.point) : []
+  const pinnedXCoord =
+    pinnedX && maxX > minX
+      ? PADDING.left + ((pinnedX.getTime() - minX) / (maxX - minX)) * chartWidth
+      : null
+
+  const activeX =
+    hoverX !== null
+      ? hoverX
+      : pinnedXCoord !== null && pinnedXCoord >= PADDING.left && pinnedXCoord <= width - PADDING.right
+        ? pinnedXCoord
+        : null
+
+  const activeTime =
+    activeX !== null && maxX > minX
+      ? new Date(minX + ((activeX - PADDING.left) / chartWidth) * (maxX - minX))
+      : null
+
+  const activeValues =
+    activeTime !== null
+      ? effectiveSeries.map((s) => ({ series: s, y: interpolateAt(s.points, activeTime) }))
+      : []
 
   const hasData = scaledSeries.some(s => s.scaledPoints.length > 0)
 
@@ -269,7 +355,7 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => 
 
       {/* Y axis grid lines and labels */}
       {yTicks.map((tick, i) => {
-        const y = PADDING.top + chartHeight - ((tick - minY) / (maxY - minY)) * chartHeight
+        const y = PADDING.top + chartHeight - ((tick - minYLeft) / (maxYLeft - minYLeft || 1)) * chartHeight
         return (
           <g key={`y-${i}`}>
             <line
@@ -294,6 +380,25 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => 
           </g>
         )
       })}
+
+      {/* Right Y Axis labels (Inventory) */}
+      {hasRightAxis &&
+        yTicksRight.map((tick, i) => {
+          const y = PADDING.top + chartHeight - ((tick - minYRight) / (maxYRight - minYRight || 1)) * chartHeight
+          return (
+            <text
+              key={`yr-${i}`}
+              x={width - PADDING.right + 10}
+              y={y + 4}
+              textAnchor="start"
+              fill="#5c6c7a"
+              fontSize="11"
+              fontFamily="var(--font-mono, monospace)"
+            >
+              {formatNumber(tick)}
+            </text>
+          )
+        })}
 
       {/* X axis labels */}
       {xTicks.map((tick, i) => (
@@ -322,6 +427,19 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => 
         Cost ($)
       </text>
 
+      {hasRightAxis && (
+        <text
+          x={width - 15}
+          y={height / 2}
+          textAnchor="middle"
+          fill="#5c6c7a"
+          fontSize="11"
+          transform={`rotate(-90, ${width - 15}, ${height / 2})`}
+        >
+          Inventory
+        </text>
+      )}
+
       {hasData ? (
         <>
           {/* Area fills (only for single series) */}
@@ -341,6 +459,7 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => 
               d={s.pathD}
               fill="none"
               stroke={s.color}
+              strokeDasharray={s.dash}
               strokeWidth={isOverlayMode ? 2 : 2.5}
               strokeLinejoin="round"
               strokeLinecap="round"
@@ -367,80 +486,87 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300 }) => 
             ))
           )}
 
-          {/* Vertical crosshair on hover */}
-          {hoverX !== null && hoveredPoints.length > 0 && (
+          {/* Crosshair + interpolated values (hover or pinned) */}
+          {activeX !== null && activeTime !== null && activeValues.length > 0 && (
             <>
               <line
-                x1={hoverX}
+                x1={activeX}
                 y1={PADDING.top}
-                x2={hoverX}
+                x2={activeX}
                 y2={height - PADDING.bottom}
                 stroke="rgba(255, 255, 255, 0.3)"
                 strokeWidth="1"
                 strokeDasharray="4,4"
               />
-              
-              {/* Tooltip for each series */}
-              {hoveredPoints.map((hp) => (
-                <g key={`tooltip-${hp.series.id}`}>
-                  {/* Dot on line */}
+
+              {activeValues.map((v) => {
+                if (v.y === null) return null
+                const yAxis = v.series.yAxis ?? 'left'
+                const minY = yAxis === 'right' ? minYRight : minYLeft
+                const maxY = yAxis === 'right' ? maxYRight : maxYLeft
+                const py = PADDING.top + chartHeight - ((v.y - minY) / (maxY - minY || 1)) * chartHeight
+                return (
                   <circle
-                    cx={hp.point.x}
-                    cy={hp.point.y}
+                    key={`active-${v.series.id}`}
+                    cx={activeX}
+                    cy={py}
                     r="6"
-                    fill={hp.series.color}
+                    fill={v.series.color}
                     stroke="#0a0e17"
                     strokeWidth="2"
                   />
-                </g>
-              ))}
+                )
+              })}
 
-              {/* Combined tooltip box */}
               <g>
                 <rect
-                  x={Math.min(Math.max(hoverX - 80, PADDING.left), width - PADDING.right - 160)}
+                  x={Math.min(Math.max(activeX - 90, PADDING.left), width - PADDING.right - 180)}
                   y={PADDING.top + 10}
-                  width={160}
-                  height={20 + hoveredPoints.length * 22}
+                  width={180}
+                  height={20 + activeValues.length * 22}
                   rx={6}
                   fill="#1a2332"
                   stroke="rgba(255, 255, 255, 0.2)"
                   strokeWidth="1"
                 />
-                {/* Date */}
                 <text
-                  x={Math.min(Math.max(hoverX, PADDING.left + 80), width - PADDING.right - 80)}
+                  x={Math.min(Math.max(activeX, PADDING.left + 90), width - PADDING.right - 90)}
                   y={PADDING.top + 26}
                   textAnchor="middle"
                   fill="#8899a6"
                   fontSize="10"
                 >
-                  {hoveredPoints[0]?.point.originalX.toLocaleDateString('en-US', {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric'
-                  })}
+                  {activeTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </text>
-                {/* Values for each series */}
-                {hoveredPoints.map((hp, idx) => (
-                  <g key={`tooltip-text-${hp.series.id}`}>
-                    <circle
-                      cx={Math.min(Math.max(hoverX - 65, PADDING.left + 15), width - PADDING.right - 145)}
-                      cy={PADDING.top + 42 + idx * 22}
-                      r="4"
-                      fill={hp.series.color}
-                    />
-                    <text
-                      x={Math.min(Math.max(hoverX - 55, PADDING.left + 25), width - PADDING.right - 135)}
-                      y={PADDING.top + 46 + idx * 22}
-                      fill={hp.series.color}
-                      fontSize="12"
-                      fontWeight="500"
-                    >
-                      {isOverlayMode ? hp.series.name.slice(0, 8) : ''} ${hp.point.originalY.toFixed(2)}
-                    </text>
-                  </g>
-                ))}
+                {activeValues.map((v, idx) => {
+                  const fmt = v.series.valueFormat ?? ((v.series.yAxis ?? 'left') === 'left' ? 'currency' : 'number')
+                  const valueText =
+                    v.y === null
+                      ? '—'
+                      : fmt === 'currency'
+                        ? formatCurrency(v.y)
+                        : `${formatNumber(v.y)}${v.series.unit ? ` ${v.series.unit}` : ''}`
+                  return (
+                    <g key={`tooltip-text-${v.series.id}`}>
+                      <circle
+                        cx={Math.min(Math.max(activeX - 75, PADDING.left + 15), width - PADDING.right - 165)}
+                        cy={PADDING.top + 42 + idx * 22}
+                        r="4"
+                        fill={v.series.color}
+                      />
+                      <text
+                        x={Math.min(Math.max(activeX - 65, PADDING.left + 25), width - PADDING.right - 155)}
+                        y={PADDING.top + 46 + idx * 22}
+                        fill={v.series.color}
+                        fontSize="12"
+                        fontWeight="500"
+                      >
+                        {isOverlayMode ? `${v.series.name.slice(0, 10)} ` : ''}
+                        {valueText}
+                      </text>
+                    </g>
+                  )
+                })}
               </g>
             </>
           )}

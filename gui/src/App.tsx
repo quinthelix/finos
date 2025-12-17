@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import './index.css'
 import log from 'loglevel'
-import { fetchInventory, fetchPurchaseOrders } from './api'
+import { fetchInventory, fetchInventorySnapshots, fetchPurchaseOrders } from './api'
 import type { InventoryItem, PurchaseOrder, CommoditySummary } from './types'
 import { LineChart, SERIES_COLORS } from './components/LineChart'
 import type { Point, Series } from './components/LineChart'
@@ -273,11 +273,13 @@ function UnderConstruction({ feature }: { feature: string }) {
 function CommoditiesView({
   orders,
   inventory,
+  inventorySnapshots,
   loading,
   error,
 }: {
   orders: PurchaseOrder[]
   inventory: InventoryItem[]
+  inventorySnapshots: InventoryItem[]
   loading: boolean
   error: string | null
 }) {
@@ -285,6 +287,8 @@ function CommoditiesView({
   const [overlayMode, setOverlayMode] = useState(false)
   const [overlaySelection, setOverlaySelection] = useState<Set<string>>(new Set())
   const [duration, setDuration] = useState<string>('all')
+  const [pinnedX, setPinnedX] = useState<Date | null>(null)
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
 
   // Filter ALL orders by duration first
   const filteredOrders = useMemo(() => {
@@ -357,13 +361,27 @@ function CommoditiesView({
     return filteredOrders.filter((o) => (selectedCommodity ? o.commodityId === selectedCommodity : true))
   }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection])
 
-  // Single series chart points (non-overlay mode)
-  const chartPoints: Point[] = useMemo(() => {
+  // Cost series points (non-overlay mode)
+  const costPoints: Point[] = useMemo(() => {
     if (overlayMode) return []
     return commodityOrders
       .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit * o.quantity }))
       .sort((a, b) => a.x.getTime() - b.x.getTime())
   }, [commodityOrders, overlayMode])
+
+  // Inventory series points (weekly snapshots, non-overlay mode)
+  const inventoryPoints: Point[] = useMemo(() => {
+    if (overlayMode) return []
+    if (!selectedCommodity) return []
+    // Filter snapshots by selected commodity and duration (same duration state as orders)
+    const durationDays = DURATIONS.find((d) => d.id === duration)?.days ?? 0
+    const cutoff = durationDays === 0 ? 0 : Date.now() - durationDays * 24 * 60 * 60 * 1000
+    return inventorySnapshots
+      .filter((s) => s.commodityId === selectedCommodity)
+      .filter((s) => (durationDays === 0 ? true : new Date(s.asOf).getTime() >= cutoff))
+      .map((s) => ({ x: new Date(s.asOf), y: s.onHand }))
+      .sort((a, b) => a.x.getTime() - b.x.getTime())
+  }, [inventorySnapshots, overlayMode, selectedCommodity, duration])
 
   // Multiple series for overlay mode
   const chartSeries: Series[] = useMemo(() => {
@@ -384,6 +402,33 @@ function CommoditiesView({
       }
     })
   }, [overlayMode, overlaySelection, filteredOrders, commodities, commodityColors])
+
+  const singleModeSeries: Series[] = useMemo(() => {
+    if (overlayMode) return []
+    if (!selectedCommodity) return []
+    const color = commodityColors.get(selectedCommodity) || '#00d4aa'
+    const unit = inventoryByCommodity.get(selectedCommodity)?.unit
+    return [
+      {
+        id: `cost-${selectedCommodity}`,
+        name: 'Cost',
+        points: costPoints,
+        color,
+        yAxis: 'left',
+        valueFormat: 'currency',
+      },
+      {
+        id: `inv-${selectedCommodity}`,
+        name: 'Inventory',
+        points: inventoryPoints,
+        color,
+        dash: '6,6',
+        yAxis: 'right',
+        unit,
+        valueFormat: 'number',
+      },
+    ]
+  }, [overlayMode, selectedCommodity, commodityColors, costPoints, inventoryPoints, inventoryByCommodity])
 
   const selectedCommodityData = commodities.find(c => c.id === selectedCommodity)
   const durationLabel = DURATIONS.find(d => d.id === duration)?.label || 'All Time'
@@ -590,7 +635,11 @@ function CommoditiesView({
             {overlayMode ? (
               <LineChart key={`overlay-${duration}-${Array.from(overlaySelection).join(',')}`} series={chartSeries} />
             ) : (
-              <LineChart key={`${selectedCommodity}-${duration}`} points={chartPoints} />
+              <LineChart
+                key={`${selectedCommodity}-${duration}`}
+                series={singleModeSeries}
+                pinnedX={pinnedX}
+              />
             )}
           </div>
 
@@ -607,7 +656,18 @@ function CommoditiesView({
             </thead>
             <tbody>
               {commodityOrders.slice(0, 10).map((o) => (
-                <tr key={o.id}>
+                <tr
+                  key={o.id}
+                  className={!overlayMode && selectedOrderId === o.id ? 'selected' : ''}
+                  onClick={() => {
+                    if (overlayMode) return
+                    const t = new Date(o.createdAt)
+                    setPinnedX((prev) => (prev && prev.getTime() === t.getTime() ? null : t))
+                    setSelectedOrderId((prev) => (prev === o.id ? null : o.id))
+                  }}
+                  style={!overlayMode ? { cursor: 'pointer' } : undefined}
+                  title={!overlayMode ? 'Click to pin this order on the chart' : undefined}
+                >
                   {overlayMode && (
                     <td>
                       <span 
@@ -649,6 +709,7 @@ export default function App() {
   const [nav, setNav] = useState<NavId>('commodities')
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [inventory, setInventory] = useState<InventoryItem[]>([])
+  const [inventorySnapshots, setInventorySnapshots] = useState<InventoryItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -656,9 +717,14 @@ export default function App() {
     async function load() {
       setLoading(true)
       try {
-        const [ordersData, inventoryData] = await Promise.all([fetchPurchaseOrders(), fetchInventory()])
+        const [ordersData, inventoryData, inventorySnapshotsData] = await Promise.all([
+          fetchPurchaseOrders(),
+          fetchInventory(),
+          fetchInventorySnapshots(),
+        ])
         setOrders(ordersData)
         setInventory(inventoryData)
+        setInventorySnapshots(inventorySnapshotsData)
       } catch (err) {
         log.error('Failed to load data', err)
         setError('Failed to load data')
@@ -712,7 +778,13 @@ export default function App() {
         </div>
 
         {nav === 'commodities' && (
-          <CommoditiesView orders={orders} inventory={inventory} loading={loading} error={error} />
+          <CommoditiesView
+            orders={orders}
+            inventory={inventory}
+            inventorySnapshots={inventorySnapshots}
+            loading={loading}
+            error={error}
+          />
         )}
         {nav === 'positions' && <UnderConstruction feature="positions" />}
         {nav === 'trade' && <UnderConstruction feature="trade" />}

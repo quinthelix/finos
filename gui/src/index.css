@@ -402,6 +402,29 @@ body {
   background: var(--bg-tertiary);
 }
 
+.data-table tbody tr.selected td {
+  background: rgba(0, 212, 170, 0.06);
+}
+
+.data-table tbody tr.selected {
+  outline: 1px solid rgba(0, 212, 170, 0.18);
+  outline-offset: -1px;
+}
+
+.data-table tbody tr.selected td:first-child {
+  position: relative;
+}
+
+.data-table tbody tr.selected td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent-primary);
+}
+
 .data-table .mono {
   font-family: var(--font-mono);
 }

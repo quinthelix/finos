@@ -2,10 +2,11 @@ import { afterAll, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import pino from 'pino';
 import fetch, { Response } from 'node-fetch';
 import http from 'http';
+import { AddressInfo } from 'net';
 import { createSimServer, PurchaseOrder } from './index.js';
 
 // Simple webhook receiver for testing subscription callbacks (plain http)
-function createWebhookSink(port: number) {
+async function createWebhookSink(port: number) {
   const received: PurchaseOrder[] = [];
   const server = http.createServer((req, res) => {
     if (req.method !== 'POST') {
@@ -28,8 +29,12 @@ function createWebhookSink(port: number) {
       res.end(JSON.stringify({ status: 'ok' }));
     });
   });
-  server.listen(port);
-  return { received, stop: () => server.close() };
+
+  await new Promise<void>((resolve) => server.listen(port, resolve));
+  const address = server.address() as AddressInfo;
+  const actualPort = address.port;
+
+  return { received, port: actualPort, stop: () => server.close() };
 }
 
 describe('erp-sim', () => {
@@ -50,47 +55,47 @@ describe('erp-sim', () => {
   it('generates purchase orders with expected shape and supports history queries', async () => {
     sim = createSimServer({
       companyId: 'test-co',
-      port: 4201,
+      port: 0,
       host: '127.0.0.1',
       disableGenerator: false,
       disableHistory: false,
       tickMs: 200,
       logger,
     });
-    await sim.start();
+    const address = await sim.start();
+    const baseUrl = typeof address === 'string' ? address : 'http://127.0.0.1:0';
 
     // Wait for at least one tick to generate data
     await new Promise((r) => setTimeout(r, 400));
 
-    const res = await fetch('http://127.0.0.1:4201/erp/test-co/purchase-orders');
+    const res = await fetch(`${baseUrl}/erp/test-co/purchase-orders`);
     expect(res.ok).toBe(true);
     const body = (await res.json()) as { data: PurchaseOrder[] };
     expect(body.data.length).toBeGreaterThan(0);
     const po = body.data[0];
     expect(po).toHaveProperty('id');
-    expect(po).toMatchObject({
-      companyId: 'test-co',
-      status: 'confirmed',
-    });
+    expect(po.companyId).toBe('test-co');
+    expect(['in_approval', 'executed', 'supplied']).toContain(po.status);
   });
 
   it('registers webhook subscribers and delivers newly generated POs', async () => {
-    const sink = createWebhookSink(4202);
+    const sink = await createWebhookSink(0);
     sim = createSimServer({
       companyId: 'test-co',
-      port: 4203,
+      port: 0,
       host: '127.0.0.1',
       disableHistory: true,
       tickMs: 200,
       logger,
     });
-    await sim.start();
+    const address = await sim.start();
+    const baseUrl = typeof address === 'string' ? address : 'http://127.0.0.1:0';
 
     // Register subscription
-    const subRes = await fetch('http://127.0.0.1:4203/erp/test-co/subscriptions', {
+    const subRes = await fetch(`${baseUrl}/erp/test-co/subscriptions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ callbackUrl: 'http://127.0.0.1:4202' }),
+      body: JSON.stringify({ callbackUrl: `http://127.0.0.1:${sink.port}` }),
     });
     expect(subRes.ok).toBe(true);
 

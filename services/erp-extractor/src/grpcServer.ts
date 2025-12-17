@@ -7,6 +7,7 @@ import {
   ListPurchaseOrdersResponse,
   GetPurchaseOrderRequest,
   PurchaseOrder,
+  PurchaseStatus,
   InventorySnapshot,
   ListInventorySnapshotsRequest,
   ListInventorySnapshotsResponse,
@@ -18,6 +19,20 @@ type GrpcServerHandle = {
   server: Server;
   address: string;
 };
+
+function toPurchaseStatus(status: any): PurchaseStatus {
+  const value = typeof status === 'string' ? status.toLowerCase() : '';
+  switch (value) {
+    case 'in_approval':
+      return PurchaseStatus.IN_APPROVAL;
+    case 'executed':
+      return PurchaseStatus.EXECUTED;
+    case 'supplied':
+      return PurchaseStatus.SUPPLIED;
+    default:
+      return PurchaseStatus.PURCHASE_STATUS_UNSPECIFIED;
+  }
+}
 
 function mapRowToPurchaseOrder(row: any): PurchaseOrder {
   const delivery =
@@ -35,7 +50,7 @@ function mapRowToPurchaseOrder(row: any): PurchaseOrder {
     currency: row.currency,
     deliveryDate: delivery,
     createdAt: created,
-    status: row.status,
+    status: toPurchaseStatus(row.status),
   };
 }
 

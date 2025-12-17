@@ -92,7 +92,9 @@ services:
     environment:
       PORT: 4001
       COMPANY_ID: 00000000-0000-0000-0000-000000000001
-      ERP_SIM_TICK_MS: 10000
+      ERP_SIM_TICK_MS: 600000
+      ERP_SIM_STEP_DAYS: 7
+      ERP_SIM_HISTORY_MONTHS: 24
       ERP_SIM_BASE_CURRENCY: USD
     ports:
       - "4001:4001"
