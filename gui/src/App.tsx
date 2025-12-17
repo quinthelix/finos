@@ -541,7 +541,12 @@ function CommoditiesView({
   const pricePoints: Point[] = useMemo(() => {
     if (overlayMode) return []
     return commodityOrders
-      .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit }))
+      .map((o) => ({
+        x: new Date(o.createdAt),
+        y: o.pricePerUnit,
+        // Paint mini-chart dots by the same quality call color.
+        strokeColor: o.qualityColor,
+      }))
       .sort((a, b) => a.x.getTime() - b.x.getTime())
   }, [commodityOrders, overlayMode])
   const priceSeriesSingle: Series[] = useMemo(() => {

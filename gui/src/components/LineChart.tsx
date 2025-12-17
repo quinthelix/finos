@@ -507,23 +507,13 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
                 y={barTopY}
                 width={barWidth}
                 height={Math.abs(heightPx)}
+                // Bars stay commodity-colored; quality is shown elsewhere.
                 fill={s.color}
                 stroke="rgba(255,255,255,0.08)"
                 strokeWidth={1}
                 opacity={0.9}
                 rx={3}
               />
-              {/* Quality marker: dot near bar top (red/white/green) */}
-              {p.strokeColor && (
-                <circle
-                  cx={p.x}
-                  cy={Math.max(PADDING.top + 8, barTopY + 8)}
-                  r={5}
-                  fill={p.strokeColor}
-                  stroke="rgba(10, 14, 23, 0.9)"
-                  strokeWidth={2}
-                />
-              )}
             </g>
           )
         })
@@ -557,7 +547,7 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
                 cy={p.y}
                 r={3}
                 fill="#0a0e17"
-                stroke={s.color}
+                stroke={p.strokeColor ?? s.color}
                 strokeWidth="2"
               />
             ))
