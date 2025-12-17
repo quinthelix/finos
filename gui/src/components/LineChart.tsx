@@ -1,16 +1,18 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 
-export type Point = { x: Date; y: number }
+export type Point = { x: Date; y: number; strokeColor?: string }
 
 export type Series = {
   id: string
   name: string
   points: Point[]
   color: string
+  type?: 'line' | 'bar'
   dash?: string
   yAxis?: 'left' | 'right'
   unit?: string
   valueFormat?: 'currency' | 'number'
+  strokeColor?: string
 }
 
 type Props = {
@@ -18,14 +20,17 @@ type Props = {
   series?: Series[] // Multiple series for overlay mode
   height?: number
   pinnedX?: Date | null
+  minYZero?: boolean
+  hideAreas?: boolean
 }
 
-type ScaledPoint = { x: number; y: number; originalX: Date; originalY: number }
+type ScaledPoint = { x: number; y: number; originalX: Date; originalY: number; strokeColor?: string }
 
 type ScaledSeries = {
   id: string
   name: string
   color: string
+  strokeColor?: string
   dash?: string
   yAxis: 'left' | 'right'
   unit?: string
@@ -65,13 +70,10 @@ function formatNumber(value: number): string {
 }
 
 function formatDate(date: Date, range: number): string {
-  if (range <= 30) {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (range <= 90) {
+    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
-  if (range <= 365) {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
-  return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+  return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
 }
 
 function createPath(scaledPoints: ScaledPoint[]): string {
@@ -111,7 +113,8 @@ function interpolateAt(points: Point[], x: Date): number | null {
 function scaleMultipleSeries(
   seriesList: Series[],
   width: number,
-  height: number
+  height: number,
+  opts?: { minYZero?: boolean }
 ): {
   scaledSeries: ScaledSeries[]
   minYLeft: number
@@ -145,8 +148,10 @@ function scaleMultipleSeries(
 
   const dataMinYLeft = leftYs.length ? Math.min(...leftYs) : 0
   const dataMaxYLeft = leftYs.length ? Math.max(...leftYs) : 0
-  const minYLeft = leftYs.length ? dataMinYLeft * 0.9 : 0
-  const maxYLeft = leftYs.length ? dataMaxYLeft * 1.1 : 0
+  const minYLeft =
+    leftYs.length === 0 ? 0 : opts?.minYZero ? 0 : dataMinYLeft * 0.9
+  const maxYLeft =
+    leftYs.length === 0 ? 0 : opts?.minYZero ? dataMaxYLeft * 1.1 : dataMaxYLeft * 1.1
   const spanYLeft = maxYLeft === minYLeft ? 1 : maxYLeft - minYLeft
 
   const dataMinYRight = rightYs.length ? Math.min(...rightYs) : 0
@@ -166,7 +171,7 @@ function scaleMultipleSeries(
       .map((p) => {
         const px = PADDING.left + ((p.x.getTime() - minX) / spanX) * chartWidth
         const py = PADDING.top + chartHeight - ((p.y - minY) / spanY) * chartHeight
-        return { x: px, y: py, originalX: p.x, originalY: p.y }
+        return { x: px, y: py, originalX: p.x, originalY: p.y, strokeColor: p.strokeColor }
       })
     
     return {
@@ -185,11 +190,25 @@ function scaleMultipleSeries(
   return { scaledSeries, minYLeft, maxYLeft, minYRight, maxYRight, minX, maxX }
 }
 
-export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinnedX }) => {
-  const width = 700
+export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinnedX, minYZero = false, hideAreas = false }) => {
   const svgRef = useRef<SVGSVGElement>(null)
   const [isAnimating, setIsAnimating] = useState(true)
   const [hoverX, setHoverX] = useState<number | null>(null)
+  const [width, setWidth] = useState(900)
+
+  useEffect(() => {
+    function measure() {
+      const parent = svgRef.current?.parentElement
+      if (parent) {
+        const rect = parent.getBoundingClientRect()
+        const target = Math.max(700, rect.width * 0.9)
+        setWidth(target)
+      }
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
 
   // Convert single points to series format for unified handling
   const effectiveSeries: Series[] = series || (points ? [{
@@ -203,7 +222,12 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
 
   const isOverlayMode = effectiveSeries.length > 1
   
-  const { scaledSeries, minYLeft, maxYLeft, minYRight, maxYRight, minX, maxX } = scaleMultipleSeries(effectiveSeries, width, height)
+  const { scaledSeries, minYLeft, maxYLeft, minYRight, maxYRight, minX, maxX } = scaleMultipleSeries(
+    effectiveSeries,
+    width,
+    height,
+    { minYZero }
+  )
   const chartHeight = height - PADDING.top - PADDING.bottom
   const chartWidth = width - PADDING.left - PADDING.right
 
@@ -293,6 +317,21 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
       : []
 
   const hasData = scaledSeries.some(s => s.scaledPoints.length > 0)
+  const barSeries = scaledSeries.filter((s) => (effectiveSeries.find(es => es.id === s.id)?.type ?? 'line') === 'bar')
+  const lineSeries = scaledSeries.filter((s) => (effectiveSeries.find(es => es.id === s.id)?.type ?? 'line') === 'line')
+
+  // Determine bar width based on spacing
+  let barWidth = 24
+  const xPositions = barSeries.flatMap((s) => s.scaledPoints.map((p) => p.x)).sort((a, b) => a - b)
+  if (xPositions.length > 1) {
+    let minGap = Infinity
+    for (let i = 1; i < xPositions.length; i++) {
+      minGap = Math.min(minGap, xPositions[i] - xPositions[i - 1])
+    }
+    if (minGap !== Infinity) {
+      barWidth = Math.max(8, Math.min(40, minGap * 0.8))
+    }
+  }
 
   return (
     <svg 
@@ -442,8 +481,8 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
 
       {hasData ? (
         <>
-          {/* Area fills (only for single series) */}
-          {!isOverlayMode && scaledSeries.map(s => s.scaledPoints.length > 1 && (
+          {/* Area fills (only for single line series unless hidden) */}
+          {!isOverlayMode && !hideAreas && lineSeries.map(s => s.scaledPoints.length > 1 && (
             <path
               key={`area-${s.id}`}
               d={`${s.pathD} L ${s.scaledPoints[s.scaledPoints.length - 1].x},${height - PADDING.bottom} L ${s.scaledPoints[0].x},${height - PADDING.bottom} Z`}
@@ -452,8 +491,46 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
             />
           ))}
           
+      {/* Bars */}
+      {barSeries.map((s) =>
+        s.scaledPoints.map((p, idx) => {
+          const yAxis = s.yAxis ?? 'left'
+          const minY = yAxis === 'right' ? minYRight : minYLeft
+          const maxY = yAxis === 'right' ? maxYRight : maxYLeft
+          const baseY = PADDING.top + chartHeight - ((0 - minY) / (maxY - minY || 1)) * chartHeight
+          const heightPx = baseY - p.y
+          const barTopY = heightPx >= 0 ? p.y : p.y + heightPx
+          return (
+            <g key={`bar-${s.id}-${idx}`}>
+              <rect
+                x={p.x - barWidth / 2}
+                y={barTopY}
+                width={barWidth}
+                height={Math.abs(heightPx)}
+                fill={s.color}
+                stroke="rgba(255,255,255,0.08)"
+                strokeWidth={1}
+                opacity={0.9}
+                rx={3}
+              />
+              {/* Quality marker: dot near bar top (red/white/green) */}
+              {p.strokeColor && (
+                <circle
+                  cx={p.x}
+                  cy={Math.max(PADDING.top + 8, barTopY + 8)}
+                  r={5}
+                  fill={p.strokeColor}
+                  stroke="rgba(10, 14, 23, 0.9)"
+                  strokeWidth={2}
+                />
+              )}
+            </g>
+          )
+        })
+      )}
+
           {/* Lines for each series */}
-          {scaledSeries.map((s, idx) => s.scaledPoints.length > 0 && (
+          {lineSeries.map((s, idx) => s.scaledPoints.length > 0 && (
             <path
               key={`line-${s.id}`}
               d={s.pathD}
@@ -472,7 +549,7 @@ export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinne
           ))}
 
           {/* Data points (only when not animating and limited in overlay mode) */}
-          {!isAnimating && scaledSeries.map(s => 
+          {!isAnimating && lineSeries.map(s => 
             (isOverlayMode ? s.scaledPoints.filter((_, i, arr) => i === 0 || i === arr.length - 1) : s.scaledPoints).map((p, i) => (
               <circle
                 key={`point-${s.id}-${i}`}

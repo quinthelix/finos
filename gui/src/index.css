@@ -242,10 +242,11 @@ body {
   gap: 8px;
   max-height: 500px;
   overflow-y: auto;
+  padding-right: 10px;
 }
 
 .list::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 
 .list::-webkit-scrollbar-track {
@@ -349,12 +350,27 @@ body {
   overflow: hidden;
 }
 
+
 .chart-container::before {
   content: '';
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, transparent 0%, rgba(0, 212, 170, 0.02) 100%);
   pointer-events: none;
+}
+
+.mini-chart {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+}
+
+.chart-subheader {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
 }
 
 /* Data Table */
@@ -446,6 +462,30 @@ body {
 .status-tag.pending {
   background: rgba(245, 158, 11, 0.15);
   color: var(--accent-warning);
+}
+
+.quality-chip {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.quality-chip.value {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-success);
+}
+
+.quality-chip.overpay {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--accent-danger);
+}
+
+.quality-chip.fair {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 /* Under Construction View */
@@ -683,6 +723,7 @@ body {
   background: var(--bg-tertiary);
   transition: all 0.25s var(--ease-out-expo);
   animation: listItemEnter 0.4s var(--ease-out-expo) backwards;
+  margin-right: 6px; /* keep hover effects clear of scrollbar */
 }
 
 .commodity-card:nth-child(1) { animation-delay: 0.1s; }
@@ -694,7 +735,8 @@ body {
 
 .commodity-card:hover {
   background: var(--bg-elevated);
-  transform: translateX(4px);
+  transform: translateX(2px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
 }
 
 .commodity-card.active {

@@ -36,15 +36,26 @@ const COMMODITY_EMOJIS: Record<string, string> = {
   yeast: '🍞',
   oil: '🫒',
   oats: '🥣',
-  wheat: '🌾',
-  corn: '🌽',
-  coffee: '☕',
-  cocoa: '🍫',
-  cotton: '🧵',
-  rice: '🍚',
-  soybean: '🫘',
   default: '📦',
 }
+
+// Preferred palette for known commodities; ensures stable colors across app
+const COMMODITY_COLORS: Record<string, string> = {
+  chocolate: '#0ea5e9',
+  butter: '#f59e0b',
+  sugar: '#ec4899',
+  flour: '#8b5cf6',
+  eggs: '#eab308',
+  vanilla: '#c084fc',
+  baking_soda: '#a855f7',
+  salt: '#38bdf8',
+  milk: '#60a5fa',
+  yeast: '#fb7185',
+  oil: '#fb923c',
+  oats: '#d97706',
+};
+
+const FORBIDDEN_COLORS = new Set(['#ef4444', '#00d4aa', '#ffffff', '#10b981', '#84cc16']);
 
 // Finos Logo - Yin-Yang style with f, i, n, o, s
 function FinosLogo() {
@@ -214,6 +225,25 @@ function groupCommodities(purchaseOrders: PurchaseOrder[]): CommoditySummary[] {
     .sort((a, b) => b.totalCost - a.totalCost)
 }
 
+function hashColor(key: string): string {
+  // Simple deterministic hash → HSL color
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash << 5) - hash + key.charCodeAt(i);
+    hash |= 0; // to 32bit
+  }
+  let hue = Math.abs(hash) % 360;
+  let color = `hsl(${hue}, 65%, 55%)`;
+  // Avoid forbidden exact matches by nudging hue
+  let attempts = 0;
+  while (FORBIDDEN_COLORS.has(color.toLowerCase()) && attempts < 5) {
+    hue = (hue + 37) % 360;
+    color = `hsl(${hue}, 65%, 55%)`;
+    attempts++;
+  }
+  return color;
+}
+
 function filterByDuration(orders: PurchaseOrder[], days: number): PurchaseOrder[] {
   if (days === 0) return orders
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
@@ -296,6 +326,50 @@ function CommoditiesView({
     return filterByDuration(orders, durationDays)
   }, [orders, duration])
 
+  // 3-month rolling median (by commodity) used for "purchase quality"
+  // Compare unit price at purchase time vs median unit price over the prior 90 days.
+  const qualityMedianByOrderId = useMemo(() => {
+    const byCommodity = new Map<string, PurchaseOrder[]>()
+    filteredOrders.forEach((po) => {
+      const key = po.commodityId
+      if (!byCommodity.has(key)) byCommodity.set(key, [])
+      byCommodity.get(key)!.push(po)
+    })
+
+    // Pre-sort each commodity’s orders by createdAt
+    byCommodity.forEach((list) => {
+      list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    })
+
+    const medianOf = (values: number[]): number | undefined => {
+      if (values.length === 0) return undefined
+      const sorted = values.slice().sort((a, b) => a - b)
+      const mid = Math.floor(sorted.length / 2)
+      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+    }
+
+    const result = new Map<string, number | undefined>()
+    const windowMs = 90 * 24 * 60 * 60 * 1000
+
+    byCommodity.forEach((list) => {
+      // Fallback median for small windows
+      const fallbackMedian = medianOf(list.map((o) => o.pricePerUnit))
+      let startIdx = 0
+      for (let i = 0; i < list.length; i++) {
+        const t = new Date(list[i].createdAt).getTime()
+        const windowStart = t - windowMs
+        while (startIdx < i && new Date(list[startIdx].createdAt).getTime() < windowStart) {
+          startIdx++
+        }
+        const windowPrices = list.slice(startIdx, i + 1).map((o) => o.pricePerUnit)
+        const med = medianOf(windowPrices) ?? fallbackMedian
+        result.set(list[i].id, med)
+      }
+    })
+
+    return result
+  }, [filteredOrders])
+
   // Group commodities from filtered orders
   const commodities = useMemo(() => groupCommodities(filteredOrders), [filteredOrders])
 
@@ -309,8 +383,20 @@ function CommoditiesView({
   // Create color map for commodities
   const commodityColors = useMemo(() => {
     const colors = new Map<string, string>()
-    commodities.forEach((c, i) => {
-      colors.set(c.id, SERIES_COLORS[i % SERIES_COLORS.length])
+    const used = new Set<string>()
+    commodities.forEach((c) => {
+      const key = c.id.toLowerCase()
+      let color: string | undefined = COMMODITY_COLORS[key]
+      if (color && (used.has(color) || FORBIDDEN_COLORS.has(color.toLowerCase()))) {
+        color = undefined
+      }
+      if (!color) {
+        // pick from series palette if available and unused
+        const paletteColor = SERIES_COLORS.find((col) => !used.has(col) && !FORBIDDEN_COLORS.has(col.toLowerCase()))
+        color = paletteColor || hashColor(key)
+      }
+      used.add(color)
+      colors.set(key, color)
     })
     return colors
   }, [commodities])
@@ -358,14 +444,34 @@ function CommoditiesView({
     if (overlayMode) {
       return filteredOrders.filter(o => overlaySelection.has(o.commodityId))
     }
-    return filteredOrders.filter((o) => (selectedCommodity ? o.commodityId === selectedCommodity : true))
-  }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection])
+    return filteredOrders
+      .filter((o) => (selectedCommodity ? o.commodityId === selectedCommodity : true))
+      .map((o) => {
+        const median = qualityMedianByOrderId.get(o.id)
+        let quality: 'value' | 'overpay' | 'fair' | undefined
+        let qualityColor: string | undefined
+        if (median !== undefined) {
+          if (o.pricePerUnit >= median * 1.1) quality = 'overpay'
+          else if (o.pricePerUnit <= median * 0.9) quality = 'value'
+          else quality = 'fair'
+          if (quality === 'overpay') qualityColor = '#ef4444'
+          if (quality === 'value') qualityColor = '#10b981'
+          if (quality === 'fair') qualityColor = '#ffffff'
+        }
+        return { ...o, quality, qualityColor }
+      })
+  }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection, qualityMedianByOrderId])
 
   // Cost series points (non-overlay mode)
   const costPoints: Point[] = useMemo(() => {
     if (overlayMode) return []
     return commodityOrders
-      .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit * o.quantity }))
+      .map((o) => ({
+        x: new Date(o.createdAt),
+        y: o.pricePerUnit * o.quantity,
+        // Per-bar stroke color (quality call) so the chart matches the table.
+        strokeColor: o.qualityColor,
+      }))
       .sort((a, b) => a.x.getTime() - b.x.getTime())
   }, [commodityOrders, overlayMode])
 
@@ -398,7 +504,7 @@ function CommoditiesView({
         id: commodityId,
         name: commodity?.name || commodityId,
         points,
-        color: commodityColors.get(commodityId) || '#00d4aa'
+        color: commodityColors.get(commodityId.toLowerCase()) || '#00d4aa'
       }
     })
   }, [overlayMode, overlaySelection, filteredOrders, commodities, commodityColors])
@@ -406,7 +512,7 @@ function CommoditiesView({
   const singleModeSeries: Series[] = useMemo(() => {
     if (overlayMode) return []
     if (!selectedCommodity) return []
-    const color = commodityColors.get(selectedCommodity) || '#00d4aa'
+    const color = commodityColors.get(selectedCommodity.toLowerCase()) || '#00d4aa'
     const unit = inventoryByCommodity.get(selectedCommodity)?.unit
     return [
       {
@@ -416,6 +522,7 @@ function CommoditiesView({
         color,
         yAxis: 'left',
         valueFormat: 'currency',
+        type: 'bar',
       },
       {
         id: `inv-${selectedCommodity}`,
@@ -429,6 +536,48 @@ function CommoditiesView({
       },
     ]
   }, [overlayMode, selectedCommodity, commodityColors, costPoints, inventoryPoints, inventoryByCommodity])
+
+  // Unit price series (to observe price-driven vs volume-driven spend)
+  const pricePoints: Point[] = useMemo(() => {
+    if (overlayMode) return []
+    return commodityOrders
+      .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit }))
+      .sort((a, b) => a.x.getTime() - b.x.getTime())
+  }, [commodityOrders, overlayMode])
+  const priceSeriesSingle: Series[] = useMemo(() => {
+    if (overlayMode) return []
+    if (!selectedCommodity) return []
+    const color = commodityColors.get(selectedCommodity.toLowerCase()) || '#00d4aa'
+    return [
+      {
+        id: `price-${selectedCommodity}`,
+        name: 'Unit Price',
+        points: pricePoints,
+        color,
+        yAxis: 'left',
+        valueFormat: 'currency',
+      },
+    ]
+  }, [overlayMode, selectedCommodity, pricePoints, commodityColors])
+
+  const priceSeriesOverlay: Series[] = useMemo(() => {
+    if (!overlayMode) return []
+    return Array.from(overlaySelection).map((commodityId) => {
+      const commodity = commodities.find((c) => c.id === commodityId)
+      const points = filteredOrders
+        .filter((o) => o.commodityId === commodityId)
+        .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit }))
+        .sort((a, b) => a.x.getTime() - b.x.getTime())
+      return {
+        id: `price-${commodityId}`,
+        name: commodity?.name || commodityId,
+        points,
+        color: commodityColors.get(commodityId.toLowerCase()) || '#00d4aa',
+        yAxis: 'left',
+        valueFormat: 'currency',
+      }
+    })
+  }, [overlayMode, overlaySelection, filteredOrders, commodities, commodityColors])
 
   const selectedCommodityData = commodities.find(c => c.id === selectedCommodity)
   const durationLabel = DURATIONS.find(d => d.id === duration)?.label || 'All Time'
@@ -503,18 +652,29 @@ function CommoditiesView({
               const isSelected = overlayMode 
                 ? overlaySelection.has(c.id)
                 : selectedCommodity === c.id
-              const color = commodityColors.get(c.id) || SERIES_COLORS[0]
+              const color = commodityColors.get(c.id.toLowerCase()) || SERIES_COLORS[0]
               const inv = inventoryByCommodity.get(c.id)
+              const cardStyle: React.CSSProperties = isSelected
+                ? {
+                    borderColor: color,
+                    boxShadow: `0 10px 30px ${hexToRgba(color, 0.25)}`,
+                    background: hexToRgba(color, 0.08),
+                  }
+                : {}
               
               return (
                 <div
                   key={c.id}
                   className={`commodity-card ${isSelected ? 'active' : ''} ${overlayMode ? 'overlay-mode' : ''}`}
                   onClick={() => handleCommodityClick(c.id)}
-                  style={overlayMode && isSelected ? { 
-                    borderColor: color,
-                    '--overlay-color': color 
-                  } as React.CSSProperties : undefined}
+                  style={
+                    overlayMode && isSelected
+                      ? {
+                          ...cardStyle,
+                          '--overlay-color': color,
+                        } as React.CSSProperties
+                      : cardStyle
+                  }
                 >
                   <div className="commodity-header">
                     {overlayMode && (
@@ -552,22 +712,24 @@ function CommoditiesView({
                     </div>
                     <div className="stat-row">
                       <span className="stat-label">Total Cost</span>
-                      <span className="stat-value highlight">{formatCurrency(c.totalCost)}</span>
+                      <span className="stat-value highlight" style={{ color }}>
+                        {formatCurrency(c.totalCost)}
+                      </span>
                     </div>
                   </div>
 
                   <div className="commodity-price-stats">
                     <div className="price-stat">
                       <span className="price-label">Min</span>
-                      <span className="price-value">${c.minPrice.toFixed(2)}</span>
+                      <span className="price-value" style={{ color }}>${c.minPrice.toFixed(2)}</span>
                     </div>
                     <div className="price-stat">
                       <span className="price-label">Avg</span>
-                      <span className="price-value avg">${c.avgPrice.toFixed(2)}</span>
+                      <span className="price-value avg" style={{ color }}>${c.avgPrice.toFixed(2)}</span>
                     </div>
                     <div className="price-stat">
                       <span className="price-label">Max</span>
-                      <span className="price-value">${c.maxPrice.toFixed(2)}</span>
+                      <span className="price-value" style={{ color }}>${c.maxPrice.toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -613,7 +775,12 @@ function CommoditiesView({
               <div className="chart-summary">
                 <div className="summary-stat">
                   <span className="summary-label">Total Spent</span>
-                  <span className="summary-value">{formatCurrency(selectedCommodityData.totalCost)}</span>
+                  <span
+                    className="summary-value"
+                    style={{ color: commodityColors.get(selectedCommodityData.id.toLowerCase()) || undefined }}
+                  >
+                    {formatCurrency(selectedCommodityData.totalCost)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -631,14 +798,32 @@ function CommoditiesView({
             </div>
           )}
 
-          <div className="chart-container">
+          <div className="mini-chart">
+              <div className="chart-subheader">
+                Unit price (commodity cost proxy)
+              </div>
+              <LineChart
+                key={`price-${overlayMode ? 'overlay' : selectedCommodity}-${duration}`}
+                series={overlayMode ? priceSeriesOverlay : priceSeriesSingle}
+                height={120}
+                minYZero
+                hideAreas
+              />
+            </div>
+
+            <div className="chart-container">
             {overlayMode ? (
-              <LineChart key={`overlay-${duration}-${Array.from(overlaySelection).join(',')}`} series={chartSeries} />
+              <LineChart
+                key={`overlay-${duration}-${Array.from(overlaySelection).join(',')}`}
+                series={chartSeries}
+              />
             ) : (
               <LineChart
                 key={`${selectedCommodity}-${duration}`}
                 series={singleModeSeries}
                 pinnedX={pinnedX}
+                minYZero
+                hideAreas
               />
             )}
           </div>
@@ -651,6 +836,7 @@ function CommoditiesView({
                 <th>Quantity</th>
                 <th>Price/Unit</th>
                 <th>Total</th>
+                <th>Pricing</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -685,6 +871,13 @@ function CommoditiesView({
                     ${o.pricePerUnit.toFixed(2)}
                   </td>
                   <td className="mono">${(o.pricePerUnit * o.quantity).toFixed(2)}</td>
+                  <td>
+                    {o.quality && (
+                      <span className={`quality-chip ${o.quality}`}>
+                        {o.quality === 'value' ? 'Good price' : o.quality === 'overpay' ? 'High price' : 'Fair'}
+                      </span>
+                    )}
+                  </td>
                   <td>
                     <span className={`status-tag ${o.status}`}>{o.status}</span>
                   </td>

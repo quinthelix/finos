@@ -10,6 +10,8 @@ export type PurchaseOrder = {
   deliveryDate: string
   createdAt: string
   status: string
+  quality?: 'value' | 'overpay' | 'fair'
+  qualityColor?: string
 }
 
 export type InventoryItem = {
