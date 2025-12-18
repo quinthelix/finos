@@ -350,6 +350,30 @@ body {
   overflow: hidden;
 }
 
+.charts-pair {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 6px;
+}
+
+.charts-pair-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.charts-pair-top,
+.charts-pair-bottom {
+  position: relative;
+}
+
+.charts-pair-bottom {
+  margin-top: -8px; /* pull the bottom chart up so the shared X-axis feels continuous */
+}
+
 .chart-container::before {
   content: '';
   position: absolute;

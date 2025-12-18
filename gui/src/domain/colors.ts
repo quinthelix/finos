@@ -14,8 +14,6 @@ const COMMODITY_COLORS: Record<string, string> = {
   corn: '#6366f1',
   coffee: '#a855f7',
   cotton: '#38bdf8',
-  orange_juice: '#eab308',
-  lumber: '#fb7185',
 };
 
 function hashColor(key: string): string {

@@ -37,8 +37,6 @@ const DEFAULT_COMMODITIES: Array<{ id: string; name: string; unit: string; baseP
   { id: 'corn', name: 'Corn', unit: 'bu', basePrice: 4.8 },
   { id: 'coffee', name: 'Coffee', unit: 'lb', basePrice: 1.4 },
   { id: 'cotton', name: 'Cotton', unit: 'lb', basePrice: 0.8 },
-  { id: 'orange_juice', name: 'Orange Juice', unit: 'lb', basePrice: 2.5 },
-  { id: 'lumber', name: 'Lumber', unit: 'board_feet', basePrice: 400 },
 ];
 
 const DEFAULT_INITIAL_INVENTORY: Record<string, number> = {
@@ -52,8 +50,6 @@ const DEFAULT_INITIAL_INVENTORY: Record<string, number> = {
   corn: 10000,
   coffee: 2600,
   cotton: 3200,
-  orange_juice: 1800,
-  lumber: 1400,
 };
 
 // Units per day (steady consumption). Weekly snapshots reduce by rate * 7.
@@ -68,8 +64,6 @@ const DEFAULT_CONSUMPTION_PER_DAY: Record<string, number> = {
   corn: 140,
   coffee: 18,
   cotton: 14,
-  orange_juice: 9,
-  lumber: 12,
 };
 
 const PURCHASE_INTERVAL_MIN_DAYS = 60;

@@ -397,11 +397,13 @@ type MessageType = PricePoint | ListPricesRequest | ListPricesResponse | GetLate
 function toTimestamp(date: Date): Timestamp {
   const seconds = Math.floor(date.getTime() / 1_000);
   const nanos = (date.getTime() % 1_000) * 1_000_000;
-  return { seconds: BigInt(seconds), nanos };
+  // NOTE: google.protobuf.Timestamp.seconds is generated as a string (int64) in this repo.
+  // Using BigInt here causes grpc/protobufjs to drop the seconds (→ epoch), so keep it as string.
+  return { seconds: String(seconds), nanos };
 }
 
 function fromTimestamp(t: Timestamp): Date {
-  const millis = Number(t.seconds ?? 0) * 1_000 + Number(t.nanos ?? 0) / 1_000_000;
+  const millis = Number(t.seconds ?? "0") * 1_000 + Number(t.nanos ?? 0) / 1_000_000;
   return new Date(millis);
 }
 

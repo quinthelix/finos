@@ -21,11 +21,6 @@ INSERT INTO company_users (company_id, user_id, role)
 VALUES ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a1', 'admin')
 ON CONFLICT (company_id, user_id) DO UPDATE SET role = EXCLUDED.role;
 
--- Example market data (sugar price)
-INSERT INTO market_prices (commodity_id, price, currency, unit, source, as_of)
-VALUES ('sugar', 19.450000, 'USD', 'lb', 'seed', now())
-ON CONFLICT DO NOTHING;
-
 -- Price providers (registry; yahoo is keyless)
 INSERT INTO price_providers (id, display_name, base_url, api_key_env, notes)
 VALUES
@@ -48,15 +43,59 @@ VALUES
   ('oats', 'Oats', 'CBOT Oats', 'bu', 'ZO=F', 'yahoo'),
   ('corn', 'Corn', 'CBOT Corn', 'bu', 'ZC=F', 'yahoo'),
   ('coffee', 'Coffee', 'ICE Coffee', 'lb', 'KC=F', 'yahoo'),
-  ('cotton', 'Cotton', 'ICE Cotton', 'lb', 'CT=F', 'yahoo'),
-  ('orange_juice', 'Orange Juice', 'ICE Orange Juice', 'lb', 'OJ=F', 'yahoo'),
-  ('lumber', 'Lumber', 'CME Lumber', 'board_feet', 'LBS=F', 'yahoo')
+  ('cotton', 'Cotton', 'ICE Cotton', 'lb', 'CT=F', 'yahoo')
 ON CONFLICT (id) DO UPDATE
 SET name = EXCLUDED.name,
     display_name = EXCLUDED.display_name,
     unit = EXCLUDED.unit,
     ticker = EXCLUDED.ticker,
     provider = EXCLUDED.provider;
+
+-- Example market data (seeded daily prices) so the GUI always has a visible price line,
+-- even before the commodity-scraper finishes fetching external history.
+-- Deterministic synthetic curve (no randomness) to keep reruns stable.
+WITH bases AS (
+  SELECT *
+  FROM (VALUES
+    ('sugar'::text,        0.45::numeric, 'USD'::text),
+    ('wheat'::text,        6.50::numeric, 'USD'::text),
+    ('cocoa'::text,     4200.00::numeric, 'USD'::text),
+    ('butter'::text,       2.80::numeric, 'USD'::text),
+    ('milk'::text,        17.50::numeric, 'USD'::text),
+    ('soybean_oil'::text,  0.60::numeric, 'USD'::text),
+    ('oats'::text,         3.90::numeric, 'USD'::text),
+    ('corn'::text,         4.80::numeric, 'USD'::text),
+    ('coffee'::text,       1.40::numeric, 'USD'::text),
+    ('cotton'::text,       0.80::numeric, 'USD'::text)
+  ) AS t(commodity_id, base_price, currency)
+),
+days AS (
+  SELECT generate_series(0, 365) AS d
+),
+series AS (
+  SELECT
+    b.commodity_id,
+    -- Smooth-ish deterministic variation around base price.
+    (b.base_price * (1
+      + 0.06 * sin(d.d / 11.0)
+      + 0.03 * cos(d.d / 23.0)
+      + 0.02 * sin(d.d / 5.0)
+    ))::numeric(18,6) AS price,
+    b.currency,
+    c.unit,
+    'seed'::text AS source,
+    (date_trunc('day', now()) - (d.d || ' days')::interval)::timestamptz AS as_of
+  FROM bases b
+  JOIN commodities c ON c.id = b.commodity_id
+  JOIN days d ON true
+)
+INSERT INTO market_prices (commodity_id, price, currency, unit, source, as_of)
+SELECT commodity_id, price, currency, unit, source, as_of
+FROM series
+ON CONFLICT (commodity_id, as_of, source) DO UPDATE
+SET price = EXCLUDED.price,
+    currency = EXCLUDED.currency,
+    unit = EXCLUDED.unit;
 
 -- Initial inventory (weekly readout snapshot) for demo visibility.
 -- Uses the current week boundary so reruns are idempotent within the same week.
@@ -71,9 +110,7 @@ VALUES
   ('00000000-0000-0000-0000-000000000001', 'oats',         11000.000000, 'bu',          date_trunc('week', now())),
   ('00000000-0000-0000-0000-000000000001', 'corn',         16000.000000, 'bu',          date_trunc('week', now())),
   ('00000000-0000-0000-0000-000000000001', 'coffee',        2600.000000, 'lb',          date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'cotton',        3100.000000, 'lb',          date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'orange_juice',  1800.000000, 'lb',          date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'lumber',        1400.000000, 'board_feet',  date_trunc('week', now()))
+  ('00000000-0000-0000-0000-000000000001', 'cotton',        3100.000000, 'lb',          date_trunc('week', now()))
 ON CONFLICT (company_id, commodity_id, as_of) DO UPDATE
 SET on_hand = EXCLUDED.on_hand,
     unit = EXCLUDED.unit;

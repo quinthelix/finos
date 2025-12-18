@@ -34,7 +34,7 @@ cat db/migrations/0001_init.sql | docker compose exec -T db psql -U app -d app
 
 ## Seeding for local dev
 
-- `db/dev_seed.sql` adds a demo company/user plus sample market, exposure, trade, position rows, and the traded commodity set used across the demo (sugar, wheat, cocoa, butter, milk, soybean oil, oats, corn, coffee, cotton, orange juice, lumber). It is idempotent for repeated runs.
+- `db/dev_seed.sql` adds a demo company/user plus sample market, exposure, trade, position rows, and the traded commodity set used across the demo (sugar, wheat, cocoa, butter, milk, soybean oil, oats, corn, coffee, cotton). It is idempotent for repeated runs.
 - Default demo identity: company "Ugibisco Cookies (Dallas, TX)", user "Bert Broder" (`bert.broder@ugibisco.com`), password `ugibisco-demo` (stored as `crypt`/bcrypt hash via `pgcrypto`).
 - Apply after migrations: `cat db/dev_seed.sql | docker compose exec -T db psql -U app -d app`
 

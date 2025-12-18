@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import './index.css'
 import log from 'loglevel'
-import { fetchInventory, fetchInventorySnapshots, fetchPurchaseOrders } from './api'
+import { fetchInventory, fetchInventorySnapshots, fetchMarketPrices, fetchPurchaseOrders } from './api'
 import type { InventoryItem, PurchaseOrder, CommoditySummary } from './types'
 import { LineChart, SERIES_COLORS } from './components/LineChart'
 import type { Point, Series } from './components/LineChart'
+import { SplitChart } from './components/SplitChart'
 
 type NavId = 'commodities' | 'positions' | 'trade'
 
@@ -319,6 +320,9 @@ function CommoditiesView({
   const [duration, setDuration] = useState<string>('all')
   const [pinnedX, setPinnedX] = useState<Date | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
+  const [marketPrices, setMarketPrices] = useState<
+    { commodityId: string; price: number; currency: string; unit: string; source: string; asOf: string }[]
+  >([])
 
   // Filter ALL orders by duration first
   const filteredOrders = useMemo(() => {
@@ -326,24 +330,35 @@ function CommoditiesView({
     return filterByDuration(orders, durationDays)
   }, [orders, duration])
 
-  // Price quality per commodity (compare to median)
-  const qualityMap = useMemo(() => {
-    const byCommodity = new Map<string, { prices: number[] }>()
-    filteredOrders.forEach((po) => {
-      const key = po.commodityId
-      if (!byCommodity.has(key)) byCommodity.set(key, { prices: [] })
-      byCommodity.get(key)!.prices.push(po.pricePerUnit)
-    })
-    const result = new Map<string, number>()
-    byCommodity.forEach((value, key) => {
-      const sorted = value.prices.slice().sort((a, b) => a - b)
-      if (sorted.length === 0) return
-      const mid = Math.floor(sorted.length / 2)
-      const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
-      result.set(key, median)
-    })
-    return result
-  }, [filteredOrders])
+  // Fetch market prices for the selected commodity (single mode) so the unit price chart is real scraper data.
+  useEffect(() => {
+    let cancelled = false
+    async function loadPrices() {
+      if (overlayMode) return
+      if (!selectedCommodity) return
+
+      const durationDays = DURATIONS.find((d) => d.id === duration)?.days ?? 0
+      const end = new Date()
+      const start = durationDays ? new Date(end.getTime() - durationDays * 24 * 60 * 60 * 1000) : undefined
+
+      try {
+        const data = await fetchMarketPrices({
+          commodityId: selectedCommodity,
+          start: start ? start.toISOString() : undefined,
+          end: end.toISOString(),
+          limit: durationDays ? 2000 : 5000,
+        })
+        if (!cancelled) setMarketPrices(data)
+      } catch (e) {
+        // Non-fatal; chart can fall back to purchase prices if needed.
+        if (!cancelled) setMarketPrices([])
+      }
+    }
+    loadPrices()
+    return () => {
+      cancelled = true
+    }
+  }, [overlayMode, selectedCommodity, duration])
 
   // Group commodities from filtered orders
   const commodities = useMemo(() => groupCommodities(filteredOrders), [filteredOrders])
@@ -419,10 +434,30 @@ function CommoditiesView({
     if (overlayMode) {
       return filteredOrders.filter(o => overlaySelection.has(o.commodityId))
     }
+
+    const medianOf = (values: number[]): number | undefined => {
+      if (!values.length) return undefined
+      const sorted = values.slice().sort((a, b) => a - b)
+      const mid = Math.floor(sorted.length / 2)
+      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+    }
+
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10)
+    const pricesSorted = marketPrices
+      .map((p) => ({ t: new Date(p.asOf).getTime(), y: p.price }))
+      .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.y))
+      .sort((a, b) => a.t - b.t)
+    const fallbackMedian = medianOf(pricesSorted.map((p) => p.y))
+    const windowMs = 90 * 24 * 60 * 60 * 1000
+
     return filteredOrders
       .filter((o) => (selectedCommodity ? o.commodityId === selectedCommodity : true))
       .map((o) => {
-        const median = qualityMap.get(o.commodityId)
+        // 3-month rolling median of market price (commodity cost proxy) around purchase time.
+        const t = new Date(o.createdAt).getTime()
+        const winStart = t - windowMs
+        const windowPrices = pricesSorted.filter((p) => p.t >= winStart && p.t <= t).map((p) => p.y)
+        const median = medianOf(windowPrices) ?? fallbackMedian
         let quality: 'value' | 'overpay' | 'fair' | undefined
         let qualityColor: string | undefined
         if (median !== undefined) {
@@ -433,9 +468,11 @@ function CommoditiesView({
           if (quality === 'value') qualityColor = '#10b981'
           if (quality === 'fair') qualityColor = '#ffffff'
         }
+        // Keep a stable key by day in case multiple price points exist for same day.
+        void dayKey
         return { ...o, quality, qualityColor }
       })
-  }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection, qualityMap])
+  }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection, marketPrices])
 
   // Cost series points (non-overlay mode)
   const costPoints: Point[] = useMemo(() => {
@@ -509,13 +546,37 @@ function CommoditiesView({
     ]
   }, [overlayMode, selectedCommodity, commodityColors, costPoints, inventoryPoints, inventoryByCommodity])
 
-  // Unit price series (to observe price-driven vs volume-driven spend)
+  // Unit price series from market prices (scraper). Color dots by purchase quality only when a purchase exists on that date.
   const pricePoints: Point[] = useMemo(() => {
     if (overlayMode) return []
-    return commodityOrders
-      .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit }))
+    if (!selectedCommodity) return []
+
+    const dayKey = (d: Date) => d.toISOString().slice(0, 10)
+    const qualityByDay = new Map<string, string>()
+    commodityOrders.forEach((o) => {
+      if (!o.qualityColor) return
+      qualityByDay.set(dayKey(new Date(o.createdAt)), o.qualityColor)
+    })
+
+    const all = marketPrices.filter((p) => p.commodityId === selectedCommodity)
+    // Prefer yahoo if present; otherwise fall back to seed/other sources.
+    const hasYahoo = all.some((p) => p.source === 'yahoo')
+    const preferred = hasYahoo ? all.filter((p) => p.source === 'yahoo') : all
+
+    // If we still have no market prices, fall back to purchase order unit prices so the chart isn't blank.
+    const fallback = commodityOrders
+      .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit, strokeColor: o.qualityColor }))
       .sort((a, b) => a.x.getTime() - b.x.getTime())
-  }, [commodityOrders, overlayMode])
+    if (!preferred.length) return fallback
+
+    return preferred
+      .map((p) => {
+        const d = new Date(p.asOf)
+        const q = qualityByDay.get(dayKey(d))
+        return { x: d, y: p.price, strokeColor: q } // undefined => use commodity color
+      })
+      .sort((a, b) => a.x.getTime() - b.x.getTime())
+  }, [marketPrices, commodityOrders, overlayMode, selectedCommodity])
 
   const priceSeriesSingle: Series[] = useMemo(() => {
     if (overlayMode) return []
@@ -533,24 +594,16 @@ function CommoditiesView({
     ]
   }, [overlayMode, selectedCommodity, pricePoints, commodityColors])
 
-  const priceSeriesOverlay: Series[] = useMemo(() => {
-    if (!overlayMode) return []
-    return Array.from(overlaySelection).map((commodityId) => {
-      const commodity = commodities.find((c) => c.id === commodityId)
-      const points = filteredOrders
-        .filter((o) => o.commodityId === commodityId)
-        .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit }))
-        .sort((a, b) => a.x.getTime() - b.x.getTime())
-      return {
-        id: `price-${commodityId}`,
-        name: commodity?.name || commodityId,
-        points,
-        color: commodityColors.get(commodityId.toLowerCase()) || '#00d4aa',
-        yAxis: 'left',
-        valueFormat: 'currency',
-      }
-    })
-  }, [overlayMode, overlaySelection, filteredOrders, commodities, commodityColors])
+  const mainXDomain = useMemo(() => {
+    if (overlayMode) return undefined
+    const all: Point[] = [...costPoints, ...inventoryPoints, ...pricePoints]
+    if (!all.length) return undefined
+    const xs = all.map((p) => p.x.getTime())
+    const min = Math.min(...xs)
+    const max = Math.max(...xs)
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined
+    return { min: new Date(min), max: new Date(max) }
+  }, [overlayMode, costPoints, inventoryPoints, pricePoints])
 
   const selectedCommodityData = commodities.find(c => c.id === selectedCommodity)
   const durationLabel = DURATIONS.find(d => d.id === duration)?.label || 'All Time'
@@ -771,19 +824,6 @@ function CommoditiesView({
             </div>
           )}
 
-          <div className="mini-chart">
-            <div className="chart-subheader">
-              Unit price (commodity cost proxy)
-            </div>
-            <LineChart
-              key={`price-${overlayMode ? 'overlay' : selectedCommodity}-${duration}`}
-              series={overlayMode ? priceSeriesOverlay : priceSeriesSingle}
-              height={120}
-              minYZero
-              hideAreas
-            />
-          </div>
-
           <div className="chart-container">
             {overlayMode ? (
               <LineChart
@@ -791,12 +831,13 @@ function CommoditiesView({
                 series={chartSeries}
               />
             ) : (
-              <LineChart
-                key={`${selectedCommodity}-${duration}`}
-                series={singleModeSeries}
+              <SplitChart
+                topSeries={singleModeSeries}
+                bottomSeries={priceSeriesSingle}
                 pinnedX={pinnedX}
-                minYZero
-                hideAreas
+                xDomain={mainXDomain}
+                topHeight={320}
+                bottomHeight={130}
               />
             )}
           </div>
