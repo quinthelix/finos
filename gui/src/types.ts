@@ -9,7 +9,7 @@ export type PurchaseOrder = {
   currency: string
   deliveryDate: string
   createdAt: string
-  status: string
+  status: string | number
   quality?: 'value' | 'overpay' | 'fair'
   qualityColor?: string
 }

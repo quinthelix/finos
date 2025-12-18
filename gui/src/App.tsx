@@ -143,6 +143,21 @@ function NavIcon({ type }: { type: string }) {
   }
 }
 
+function formatPurchaseStatus(raw: unknown): { label: string; className: 'pending' | 'executed' | 'supplied' } {
+  // API currently returns numeric enums from proto:
+  // 0 unspecified, 1 in_approval, 2 executed, 3 supplied.
+  if (typeof raw === 'number') {
+    if (raw === 2) return { label: 'Executed', className: 'executed' }
+    if (raw === 3) return { label: 'Supplied', className: 'supplied' }
+    return { label: 'Pending', className: 'pending' }
+  }
+
+  const s = String(raw ?? '').trim().toLowerCase()
+  if (s === '2' || s === 'executed') return { label: 'Executed', className: 'executed' }
+  if (s === '3' || s === 'supplied') return { label: 'Supplied', className: 'supplied' }
+  return { label: 'Pending', className: 'pending' }
+}
+
 function groupCommodities(purchaseOrders: PurchaseOrder[]): CommoditySummary[] {
   const map = new Map<string, {
     id: string
@@ -443,6 +458,18 @@ function CommoditiesView({
       })
   }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection, marketPrices])
 
+  const qualitySpend = useMemo(() => {
+    const buckets = { value: 0, fair: 0, overpay: 0 }
+    for (const o of commodityOrders) {
+      const spent = Number(o.pricePerUnit) * Number(o.quantity)
+      if (!Number.isFinite(spent) || spent <= 0) continue
+      if (o.quality === 'value') buckets.value += spent
+      else if (o.quality === 'overpay') buckets.overpay += spent
+      else if (o.quality === 'fair') buckets.fair += spent
+    }
+    return buckets
+  }, [commodityOrders])
+
   // Cost series points (non-overlay mode)
   const costPoints: Point[] = useMemo(() => {
     if (overlayMode) return []
@@ -490,7 +517,7 @@ function CommoditiesView({
     if (!selectedCommodity) return []
     const color = commodityColors.get(selectedCommodity.toLowerCase()) || '#00d4aa'
     const unit = inventoryByCommodity.get(selectedCommodity)?.unit
-    const qualityStroke = commodityOrders.find((o) => o.commodityId === selectedCommodity && o.qualityColor)?.qualityColor
+    const barQualityStroke = commodityOrders.find((o) => o.commodityId === selectedCommodity && o.qualityColor)?.qualityColor
     return [
       {
         id: `cost-${selectedCommodity}`,
@@ -500,7 +527,7 @@ function CommoditiesView({
         yAxis: 'left',
         valueFormat: 'currency',
         type: 'bar',
-        ...(qualityStroke ? { strokeColor: qualityStroke } : {}),
+        ...(barQualityStroke ? { strokeColor: barQualityStroke } : {}),
       },
       {
         id: `inv-${selectedCommodity}`,
@@ -513,7 +540,7 @@ function CommoditiesView({
         valueFormat: 'number',
       },
     ]
-  }, [overlayMode, selectedCommodity, commodityColors, costPoints, inventoryPoints, inventoryByCommodity])
+  }, [overlayMode, selectedCommodity, commodityColors, costPoints, inventoryPoints, inventoryByCommodity, commodityOrders])
 
   // Unit price series from market prices (scraper). Color dots by purchase quality only when a purchase exists on that date.
   const pricePoints: Point[] = useMemo(() => {
@@ -835,6 +862,7 @@ function CommoditiesView({
                 xDomain={mainXDomain}
                 topHeight={320}
                 bottomHeight={130}
+                qualitySpend={qualitySpend}
               />
             )}
           </div>
@@ -852,51 +880,52 @@ function CommoditiesView({
               </tr>
             </thead>
             <tbody>
-              {commodityOrders.slice(0, 10).map((o) => (
-                <tr
-                  key={o.id}
-                  className={!overlayMode && selectedOrderId === o.id ? 'selected' : ''}
-                  onClick={() => {
-                    if (overlayMode) return
-                    const t = new Date(o.createdAt)
-                    setPinnedX((prev) => (prev && prev.getTime() === t.getTime() ? null : t))
-                    setSelectedOrderId((prev) => (prev === o.id ? null : o.id))
-                  }}
-                  style={!overlayMode ? { cursor: 'pointer' } : undefined}
-                  title={!overlayMode ? 'Click to pin this order on the chart' : undefined}
-                >
-                  {overlayMode && (
-                    <td>
-                      <span 
-                        className="table-commodity-indicator"
-                        style={{ backgroundColor: commodityColors.get(o.commodityId) }}
-                      />
-                      {o.commodityName}
-                    </td>
-                  )}
-                  <td>{new Date(o.createdAt).toLocaleDateString()}</td>
-                  <td className="mono">
-                    {o.quantity} {o.unit}
-                  </td>
-                  <td className="mono">
-                    ${o.pricePerUnit.toFixed(2)}
-                  </td>
-                  <td className="mono">${(o.pricePerUnit * o.quantity).toFixed(2)}</td>
-                  <td>
-                    {o.quality && (
-                      <span className={`quality-chip ${o.quality}`}>
-                        {o.quality === 'value' ? 'Good price' : o.quality === 'overpay' ? 'High price' : 'Fair'}
-                      </span>
+              {commodityOrders.slice(0, 10).map((o) => {
+                const st = formatPurchaseStatus(o.status)
+                return (
+                  <tr
+                    key={o.id}
+                    className={!overlayMode && selectedOrderId === o.id ? 'selected' : ''}
+                    onClick={() => {
+                      if (overlayMode) return
+                      const t = new Date(o.createdAt)
+                      setPinnedX((prev) => (prev && prev.getTime() === t.getTime() ? null : t))
+                      setSelectedOrderId((prev) => (prev === o.id ? null : o.id))
+                    }}
+                    style={!overlayMode ? { cursor: 'pointer' } : undefined}
+                    title={!overlayMode ? 'Click to pin this order on the chart' : undefined}
+                  >
+                    {overlayMode && (
+                      <td>
+                        <span
+                          className="table-commodity-indicator"
+                          style={{ backgroundColor: commodityColors.get(o.commodityId) }}
+                        />
+                        {o.commodityName}
+                      </td>
                     )}
-                  </td>
-                  <td>
-                    <span className={`status-tag ${o.status}`}>{o.status}</span>
-                  </td>
-                </tr>
-              ))}
+                    <td>{new Date(o.createdAt).toLocaleDateString()}</td>
+                    <td className="mono">
+                      {o.quantity} {o.unit}
+                    </td>
+                    <td className="mono">${o.pricePerUnit.toFixed(2)}</td>
+                    <td className="mono">${(o.pricePerUnit * o.quantity).toFixed(2)}</td>
+                    <td>
+                      {o.quality && (
+                        <span className={`quality-chip ${o.quality}`}>
+                          {o.quality === 'value' ? 'Good price' : o.quality === 'overpay' ? 'High price' : 'Fair'}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      <span className={`status-tag ${st.className}`}>{st.label}</span>
+                    </td>
+                  </tr>
+                )
+              })}
               {commodityOrders.length === 0 && (
                 <tr>
-                  <td colSpan={overlayMode ? 6 : 5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={overlayMode ? 7 : 6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                     {overlayMode ? 'Select commodities to see data' : 'No orders in this time period'}
                   </td>
                 </tr>

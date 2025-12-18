@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { LineChart } from './LineChart'
 import type { Series } from './LineChart'
+import { qualityStroke } from '../domain/colors'
+import { QualitySpendPie } from './QualitySpendPie'
 
 type XDomain = { min: Date; max: Date }
 
@@ -13,6 +15,7 @@ type Props = {
   pinnedX?: Date | null
   topHeight?: number
   bottomHeight?: number
+  qualitySpend?: { value: number; fair: number; overpay: number }
 }
 
 function weekKeyFromMs(ms: number): string {
@@ -32,6 +35,7 @@ export function SplitChart({
   pinnedX,
   topHeight = 320,
   bottomHeight = 130,
+  qualitySpend,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const topRef = useRef<HTMLDivElement | null>(null)
@@ -122,7 +126,7 @@ export function SplitChart({
     }
   }, [topSeries, bottomSeries, xDomain, pinnedX, sizes])
 
-  return (
+  const charts = (
     <div className="charts-pair" ref={containerRef}>
       <div className="charts-pair-top" ref={topRef}>
         <LineChart series={topSeries} height={topHeight} pinnedX={pinnedX} minYZero hideAreas xDomain={xDomain} />
@@ -168,6 +172,39 @@ export function SplitChart({
           />
         ))}
       </svg>
+    </div>
+  )
+
+  if (!qualitySpend) return charts
+
+  return (
+    <div className="split-chart-row">
+      <div className="split-chart-left">{charts}</div>
+      <div className="split-chart-right">
+        <div className="purchases-pie">
+          <div className="purchases-pie-chart" aria-hidden="true">
+            <QualitySpendPie value={qualitySpend.value} fair={qualitySpend.fair} overpay={qualitySpend.overpay} />
+          </div>
+
+          <div className="purchases-pie-legend" aria-label="Legend">
+            <div className="purchases-pie-legend-item">
+              <span className="dot" style={{ backgroundColor: qualityStroke.value }} />
+              <span>Good</span>
+            </div>
+            <div className="purchases-pie-legend-item">
+              <span
+                className="dot"
+                style={{ backgroundColor: qualityStroke.fair, border: '1px solid rgba(255,255,255,0.25)' }}
+              />
+              <span>Fair</span>
+            </div>
+            <div className="purchases-pie-legend-item">
+              <span className="dot" style={{ backgroundColor: qualityStroke.overpay }} />
+              <span>Bad</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
