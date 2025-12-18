@@ -133,14 +133,38 @@ services:
         gelf-address: "udp://127.0.0.1:12201"
         tag: "erp-extractor"
 
+  commodity-scraper:
+    build: ./services/commodity-scraper
+    environment:
+      PORT: 50060
+      DATABASE_URL: postgres://app:app@db:5432/app
+      SCRAPER_LOOKBACK_DAYS: 730
+      SCRAPER_INTERVAL_MS: 86400000
+      MARKET_PROVIDER: yahoo
+    depends_on:
+      db:
+        condition: service_started
+      logstash:
+        condition: service_healthy
+    ports:
+      - "50060:50060"
+    logging:
+      driver: gelf
+      options:
+        gelf-address: "udp://127.0.0.1:12201"
+        tag: "commodity-scraper"
+
   api-gateway:
     build: ./services/api-gateway
     environment:
       PORT: 8080
       ERP_EXTRACTOR_GRPC_ADDR: erp-extractor:50051
+      MARKET_DATA_GRPC_ADDR: commodity-scraper:50060
       COMPANY_ID: 00000000-0000-0000-0000-000000000001
     depends_on:
       erp-extractor:
+        condition: service_started
+      commodity-scraper:
         condition: service_started
       logstash:
         condition: service_healthy

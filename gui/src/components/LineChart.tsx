@@ -22,8 +22,6 @@ type Props = {
   pinnedX?: Date | null
   minYZero?: boolean
   hideAreas?: boolean
-  xDomain?: { min: Date; max: Date }
-  showXAxis?: boolean
 }
 
 type ScaledPoint = { x: number; y: number; originalX: Date; originalY: number; strokeColor?: string }
@@ -116,7 +114,7 @@ function scaleMultipleSeries(
   seriesList: Series[],
   width: number,
   height: number,
-  opts?: { minYZero?: boolean; xDomain?: { min: Date; max: Date } }
+  opts?: { minYZero?: boolean }
 ): {
   scaledSeries: ScaledSeries[]
   minYLeft: number
@@ -134,10 +132,8 @@ function scaleMultipleSeries(
   }
 
   const xs = allPoints.map((p) => p.x.getTime())
-  const dataMinX = Math.min(...xs)
-  const dataMaxX = Math.max(...xs)
-  const minX = opts?.xDomain ? opts.xDomain.min.getTime() : dataMinX
-  const maxX = opts?.xDomain ? opts.xDomain.max.getTime() : dataMaxX
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
   const spanX = maxX === minX ? 1 : maxX - minX
 
   const chartWidth = width - PADDING.left - PADDING.right
@@ -194,16 +190,7 @@ function scaleMultipleSeries(
   return { scaledSeries, minYLeft, maxYLeft, minYRight, maxYRight, minX, maxX }
 }
 
-export const LineChart: React.FC<Props> = ({
-  points,
-  series,
-  height = 300,
-  pinnedX,
-  minYZero = false,
-  hideAreas = false,
-  xDomain,
-  showXAxis = true,
-}) => {
+export const LineChart: React.FC<Props> = ({ points, series, height = 300, pinnedX, minYZero = false, hideAreas = false }) => {
   const svgRef = useRef<SVGSVGElement>(null)
   const [isAnimating, setIsAnimating] = useState(true)
   const [hoverX, setHoverX] = useState<number | null>(null)
@@ -239,7 +226,7 @@ export const LineChart: React.FC<Props> = ({
     effectiveSeries,
     width,
     height,
-    { minYZero, xDomain }
+    { minYZero }
   )
   const chartHeight = height - PADDING.top - PADDING.bottom
   const chartWidth = width - PADDING.left - PADDING.right
@@ -396,16 +383,14 @@ export const LineChart: React.FC<Props> = ({
       />
 
       {/* X Axis */}
-      {showXAxis && (
-        <line
-          x1={PADDING.left}
-          y1={height - PADDING.bottom}
-          x2={width - PADDING.right}
-          y2={height - PADDING.bottom}
-          stroke="rgba(255,255,255,0.1)"
-          strokeWidth="1"
-        />
-      )}
+      <line
+        x1={PADDING.left}
+        y1={height - PADDING.bottom}
+        x2={width - PADDING.right}
+        y2={height - PADDING.bottom}
+        stroke="rgba(255,255,255,0.1)"
+        strokeWidth="1"
+      />
 
       {/* Y axis grid lines and labels */}
       {yTicks.map((tick, i) => {
@@ -455,20 +440,19 @@ export const LineChart: React.FC<Props> = ({
         })}
 
       {/* X axis labels */}
-      {showXAxis &&
-        xTicks.map((tick, i) => (
-          <text
-            key={`x-${i}`}
-            x={tick.value}
-            y={height - PADDING.bottom + 20}
-            textAnchor="middle"
-            fill="#5c6c7a"
-            fontSize="11"
-            fontFamily="var(--font-sans)"
-          >
-            {tick.label}
-          </text>
-        ))}
+      {xTicks.map((tick, i) => (
+        <text
+          key={`x-${i}`}
+          x={tick.value}
+          y={height - PADDING.bottom + 20}
+          textAnchor="middle"
+          fill="#5c6c7a"
+          fontSize="11"
+          fontFamily="var(--font-sans)"
+        >
+          {tick.label}
+        </text>
+      ))}
 
       {/* Y axis title */}
       <text
@@ -515,22 +499,21 @@ export const LineChart: React.FC<Props> = ({
           const maxY = yAxis === 'right' ? maxYRight : maxYLeft
           const baseY = PADDING.top + chartHeight - ((0 - minY) / (maxY - minY || 1)) * chartHeight
           const heightPx = baseY - p.y
-          const barTopY = heightPx >= 0 ? p.y : p.y + heightPx
+          const matched = effectiveSeries.find(es => es.id === s.id)
+          const strokeColor = (p.strokeColor) || (matched && (matched as any).strokeColor) || '#ffffff';
           return (
-            <g key={`bar-${s.id}-${idx}`}>
-              <rect
-                x={p.x - barWidth / 2}
-                y={barTopY}
-                width={barWidth}
-                height={Math.abs(heightPx)}
-                // Bars stay commodity-colored; quality is shown elsewhere.
-                fill={s.color}
-                stroke="rgba(255,255,255,0.08)"
-                strokeWidth={1}
-                opacity={0.9}
-                rx={3}
-              />
-            </g>
+            <rect
+              key={`bar-${s.id}-${idx}`}
+              x={p.x - barWidth / 2}
+              y={heightPx >= 0 ? p.y : p.y + heightPx}
+              width={barWidth}
+              height={Math.abs(heightPx)}
+              fill={s.color}
+              stroke={strokeColor}
+              strokeWidth={2}
+              opacity={0.9}
+              rx={3}
+            />
           )
         })
       )}
@@ -563,7 +546,7 @@ export const LineChart: React.FC<Props> = ({
                 cy={p.y}
                 r={3}
                 fill="#0a0e17"
-                stroke={p.strokeColor ?? s.color}
+                stroke={s.color}
                 strokeWidth="2"
               />
             ))

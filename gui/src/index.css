@@ -350,13 +350,6 @@ body {
   overflow: hidden;
 }
 
-.chart-container.split-chart-container {
-  /* SplitChart already has its own padding; keep the outer shell tight */
-  padding: 12px;
-  min-height: 0;
-}
-
-
 .chart-container::before {
   content: '';
   position: absolute;
@@ -366,14 +359,12 @@ body {
 }
 
 .mini-chart {
-  margin-top: 0;
+  margin-top: 12px;
   padding: 12px 16px;
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
   background: var(--bg-tertiary);
 }
-
-/* (old two-chart overlay layout removed; SplitChart renders a single combined SVG) */
 
 .chart-subheader {
   font-size: 12px;
@@ -492,8 +483,8 @@ body {
 }
 
 .quality-chip.fair {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent-info);
 }
 
 /* Under Construction View */

@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package market;
+
+import "google/protobuf/timestamp.proto";
+
+message PricePoint {
+  string commodity_id = 1;
+  double price = 2;
+  string currency = 3;
+  string unit = 4;
+  string source = 5;
+  google.protobuf.Timestamp as_of = 6;
+}
+
+message ListPricesRequest {
+  string commodity_id = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+  int32 limit = 4;
+}
+
+message ListPricesResponse {
+  repeated PricePoint prices = 1;
+}
+
+message GetLatestPriceRequest {
+  string commodity_id = 1;
+}
+
+message GetLatestPriceResponse {
+  PricePoint price = 1;
+}
+
+service MarketDataService {
+  rpc ListPrices(ListPricesRequest) returns (ListPricesResponse);
+  rpc GetLatestPrice(GetLatestPriceRequest) returns (GetLatestPriceResponse);
+}

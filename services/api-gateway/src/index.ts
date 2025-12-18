@@ -9,11 +9,17 @@ import {
   ListInventorySnapshotsRequest,
   InventorySnapshot,
 } from './generated/erp_extractor.js';
+import {
+  MarketDataServiceClient,
+  ListPricesRequest,
+  PricePoint,
+} from './generated/market_data.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = Fastify({ logger });
 
 let erpClient: ErpExtractorServiceClient | null = null;
+let marketClient: MarketDataServiceClient | null = null;
 let defaultCompanyId = '00000000-0000-0000-0000-000000000001';
 
 function loadConfig() {
@@ -22,6 +28,7 @@ function loadConfig() {
   return {
     port: Number(process.env.PORT || 8080),
     extractorAddr: process.env.ERP_EXTRACTOR_GRPC_ADDR || 'localhost:50051',
+    marketAddr: process.env.MARKET_DATA_GRPC_ADDR || 'localhost:50060',
     companyId: process.env.COMPANY_ID || '00000000-0000-0000-0000-000000000001',
     corsOrigins: (process.env.CORS_ORIGIN || defaultOrigins).split(',').map(s => s.trim()),
   };
@@ -134,6 +141,43 @@ app.get('/api/company/:companyId/inventory-snapshots', async (request, reply) =>
   return reply.send({ data });
 });
 
+app.get('/api/commodities/:commodityId/prices', async (request, reply) => {
+  const { commodityId } = request.params as { commodityId: string };
+  const { start, end, limit } = request.query as { start?: string; end?: string; limit?: string };
+  const parsedLimit = limit ? parseInt(limit, 10) : NaN;
+  const effectiveLimit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 2000)) : 500;
+  const startDate = start ? new Date(start) : undefined;
+  const endDate = end ? new Date(end) : undefined;
+
+  const req: ListPricesRequest = {
+    commodityId,
+    start: startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined,
+    end: endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined,
+    limit: effectiveLimit,
+  };
+
+  const client = marketClient;
+  if (!client) throw new Error('Market client not initialized');
+
+  const res = await new Promise<{ prices: PricePoint[] }>((resolve, reject) => {
+    client.listPrices(req, (err, response) => {
+      if (err || !response) return reject(err || new Error('no response'));
+      resolve(response);
+    });
+  });
+
+  const data = res.prices.map((p) => ({
+    commodityId: p.commodityId,
+    price: p.price,
+    currency: p.currency,
+    unit: p.unit,
+    source: p.source,
+    asOf: p.asOf?.toISOString(),
+  }));
+
+  return reply.send({ data });
+});
+
 export async function start() {
   const cfg = loadConfig();
   defaultCompanyId = cfg.companyId;
@@ -152,8 +196,9 @@ export async function start() {
   });
   
   erpClient = new ErpExtractorServiceClient(cfg.extractorAddr, credentials.createInsecure());
+  marketClient = new MarketDataServiceClient(cfg.marketAddr, credentials.createInsecure());
   await app.listen({ port: cfg.port, host: '0.0.0.0' });
-  logger.info({ port: cfg.port, extractor: cfg.extractorAddr, cors: cfg.corsOrigins }, 'api-gateway started');
+  logger.info({ port: cfg.port, extractor: cfg.extractorAddr, market: cfg.marketAddr, cors: cfg.corsOrigins }, 'api-gateway started');
 }
 
 export async function stop() {

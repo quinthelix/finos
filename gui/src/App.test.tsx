@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { filterByDuration, groupCommodities } from './App'
-import type { PurchaseOrder } from './types'
+import { filterByDuration } from './App'
+import { groupCommodities } from './services/purchases'
+import type { Purchase } from './domain/types'
 
-const sampleOrders: PurchaseOrder[] = [
+const sampleOrders: Purchase[] = [
   {
     id: '1',
     companyId: 'c1',
@@ -19,8 +20,8 @@ const sampleOrders: PurchaseOrder[] = [
   {
     id: '2',
     companyId: 'c1',
-    commodityId: 'flour',
-    commodityName: 'Flour',
+    commodityId: 'wheat',
+    commodityName: 'Wheat',
     quantity: 5,
     unit: 'lb',
     pricePerUnit: 2,

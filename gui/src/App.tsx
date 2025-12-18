@@ -5,7 +5,6 @@ import { fetchInventory, fetchInventorySnapshots, fetchPurchaseOrders } from './
 import type { InventoryItem, PurchaseOrder, CommoditySummary } from './types'
 import { LineChart, SERIES_COLORS } from './components/LineChart'
 import type { Point, Series } from './components/LineChart'
-import { SplitChart } from './components/SplitChart'
 
 type NavId = 'commodities' | 'positions' | 'trade'
 
@@ -321,55 +320,28 @@ function CommoditiesView({
   const [pinnedX, setPinnedX] = useState<Date | null>(null)
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
 
-  // SplitChart combines purchases/inventory + price in one panel, with a shared X axis and internal connectors.
-
   // Filter ALL orders by duration first
   const filteredOrders = useMemo(() => {
     const durationDays = DURATIONS.find((d) => d.id === duration)?.days ?? 0
     return filterByDuration(orders, durationDays)
   }, [orders, duration])
 
-  // 3-month rolling median (by commodity) used for "purchase quality"
-  // Compare unit price at purchase time vs median unit price over the prior 90 days.
-  const qualityMedianByOrderId = useMemo(() => {
-    const byCommodity = new Map<string, PurchaseOrder[]>()
+  // Price quality per commodity (compare to median)
+  const qualityMap = useMemo(() => {
+    const byCommodity = new Map<string, { prices: number[] }>()
     filteredOrders.forEach((po) => {
       const key = po.commodityId
-      if (!byCommodity.has(key)) byCommodity.set(key, [])
-      byCommodity.get(key)!.push(po)
+      if (!byCommodity.has(key)) byCommodity.set(key, { prices: [] })
+      byCommodity.get(key)!.prices.push(po.pricePerUnit)
     })
-
-    // Pre-sort each commodity’s orders by createdAt
-    byCommodity.forEach((list) => {
-      list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-    })
-
-    const medianOf = (values: number[]): number | undefined => {
-      if (values.length === 0) return undefined
-      const sorted = values.slice().sort((a, b) => a - b)
+    const result = new Map<string, number>()
+    byCommodity.forEach((value, key) => {
+      const sorted = value.prices.slice().sort((a, b) => a - b)
+      if (sorted.length === 0) return
       const mid = Math.floor(sorted.length / 2)
-      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
-    }
-
-    const result = new Map<string, number | undefined>()
-    const windowMs = 90 * 24 * 60 * 60 * 1000
-
-    byCommodity.forEach((list) => {
-      // Fallback median for small windows
-      const fallbackMedian = medianOf(list.map((o) => o.pricePerUnit))
-      let startIdx = 0
-      for (let i = 0; i < list.length; i++) {
-        const t = new Date(list[i].createdAt).getTime()
-        const windowStart = t - windowMs
-        while (startIdx < i && new Date(list[startIdx].createdAt).getTime() < windowStart) {
-          startIdx++
-        }
-        const windowPrices = list.slice(startIdx, i + 1).map((o) => o.pricePerUnit)
-        const med = medianOf(windowPrices) ?? fallbackMedian
-        result.set(list[i].id, med)
-      }
+      const median = sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+      result.set(key, median)
     })
-
     return result
   }, [filteredOrders])
 
@@ -450,7 +422,7 @@ function CommoditiesView({
     return filteredOrders
       .filter((o) => (selectedCommodity ? o.commodityId === selectedCommodity : true))
       .map((o) => {
-        const median = qualityMedianByOrderId.get(o.id)
+        const median = qualityMap.get(o.commodityId)
         let quality: 'value' | 'overpay' | 'fair' | undefined
         let qualityColor: string | undefined
         if (median !== undefined) {
@@ -463,18 +435,13 @@ function CommoditiesView({
         }
         return { ...o, quality, qualityColor }
       })
-  }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection, qualityMedianByOrderId])
+  }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection, qualityMap])
 
   // Cost series points (non-overlay mode)
   const costPoints: Point[] = useMemo(() => {
     if (overlayMode) return []
     return commodityOrders
-      .map((o) => ({
-        x: new Date(o.createdAt),
-        y: o.pricePerUnit * o.quantity,
-        // Per-bar stroke color (quality call) so the chart matches the table.
-        strokeColor: o.qualityColor,
-      }))
+      .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit * o.quantity }))
       .sort((a, b) => a.x.getTime() - b.x.getTime())
   }, [commodityOrders, overlayMode])
 
@@ -517,6 +484,7 @@ function CommoditiesView({
     if (!selectedCommodity) return []
     const color = commodityColors.get(selectedCommodity.toLowerCase()) || '#00d4aa'
     const unit = inventoryByCommodity.get(selectedCommodity)?.unit
+    const qualityStroke = commodityOrders.find((o) => o.commodityId === selectedCommodity && o.qualityColor)?.qualityColor
     return [
       {
         id: `cost-${selectedCommodity}`,
@@ -526,6 +494,7 @@ function CommoditiesView({
         yAxis: 'left',
         valueFormat: 'currency',
         type: 'bar',
+        ...(qualityStroke ? { strokeColor: qualityStroke } : {}),
       },
       {
         id: `inv-${selectedCommodity}`,
@@ -540,32 +509,14 @@ function CommoditiesView({
     ]
   }, [overlayMode, selectedCommodity, commodityColors, costPoints, inventoryPoints, inventoryByCommodity])
 
-  const mainXDomain = useMemo(() => {
-    // Align price chart X span to match the purchases/inventory chart span for the selected time period.
-    const all: Point[] = overlayMode ? chartSeries.flatMap((s) => s.points) : [...costPoints, ...inventoryPoints]
-    if (!all.length) return undefined
-    const xs = all.map((p) => p.x.getTime())
-    const min = Math.min(...xs)
-    const max = Math.max(...xs)
-    if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined
-    return { min: new Date(min), max: new Date(max) }
-  }, [overlayMode, chartSeries, costPoints, inventoryPoints])
-
   // Unit price series (to observe price-driven vs volume-driven spend)
   const pricePoints: Point[] = useMemo(() => {
     if (overlayMode) return []
-    const barTimes = new Set(costPoints.map((p) => p.x.getTime()))
     return commodityOrders
-      .map((o) => ({
-        x: new Date(o.createdAt),
-        y: o.pricePerUnit,
-        // Paint mini-chart dots by the same quality call color.
-        // Only apply quality color if there is a cost bar "under" this dot.
-        // If not, keep it in commodity color.
-        strokeColor: barTimes.has(new Date(o.createdAt).getTime()) ? o.qualityColor : undefined,
-      }))
+      .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit }))
       .sort((a, b) => a.x.getTime() - b.x.getTime())
-  }, [commodityOrders, overlayMode, costPoints])
+  }, [commodityOrders, overlayMode])
+
   const priceSeriesSingle: Series[] = useMemo(() => {
     if (overlayMode) return []
     if (!selectedCommodity) return []
@@ -582,7 +533,24 @@ function CommoditiesView({
     ]
   }, [overlayMode, selectedCommodity, pricePoints, commodityColors])
 
-  // (old arrows overlay removed)
+  const priceSeriesOverlay: Series[] = useMemo(() => {
+    if (!overlayMode) return []
+    return Array.from(overlaySelection).map((commodityId) => {
+      const commodity = commodities.find((c) => c.id === commodityId)
+      const points = filteredOrders
+        .filter((o) => o.commodityId === commodityId)
+        .map((o) => ({ x: new Date(o.createdAt), y: o.pricePerUnit }))
+        .sort((a, b) => a.x.getTime() - b.x.getTime())
+      return {
+        id: `price-${commodityId}`,
+        name: commodity?.name || commodityId,
+        points,
+        color: commodityColors.get(commodityId.toLowerCase()) || '#00d4aa',
+        yAxis: 'left',
+        valueFormat: 'currency',
+      }
+    })
+  }, [overlayMode, overlaySelection, filteredOrders, commodities, commodityColors])
 
   const selectedCommodityData = commodities.find(c => c.id === selectedCommodity)
   const durationLabel = DURATIONS.find(d => d.id === duration)?.label || 'All Time'
@@ -803,25 +771,35 @@ function CommoditiesView({
             </div>
           )}
 
-          {overlayMode ? (
-            <div className="chart-container">
+          <div className="mini-chart">
+            <div className="chart-subheader">
+              Unit price (commodity cost proxy)
+            </div>
+            <LineChart
+              key={`price-${overlayMode ? 'overlay' : selectedCommodity}-${duration}`}
+              series={overlayMode ? priceSeriesOverlay : priceSeriesSingle}
+              height={120}
+              minYZero
+              hideAreas
+            />
+          </div>
+
+          <div className="chart-container">
+            {overlayMode ? (
               <LineChart
                 key={`overlay-${duration}-${Array.from(overlaySelection).join(',')}`}
                 series={chartSeries}
-                xDomain={mainXDomain}
               />
-            </div>
-          ) : (
-            <div className="chart-container split-chart-container">
-              <SplitChart
-                topSeries={singleModeSeries}
-                bottomSeries={priceSeriesSingle}
-                xDomain={mainXDomain}
+            ) : (
+              <LineChart
+                key={`${selectedCommodity}-${duration}`}
+                series={singleModeSeries}
                 pinnedX={pinnedX}
-                height={360}
+                minYZero
+                hideAreas
               />
-            </div>
-          )}
+            )}
+          </div>
 
           <table className="data-table">
             <thead>

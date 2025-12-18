@@ -26,39 +26,54 @@ INSERT INTO market_prices (commodity_id, price, currency, unit, source, as_of)
 VALUES ('sugar', 19.450000, 'USD', 'lb', 'seed', now())
 ON CONFLICT DO NOTHING;
 
--- Commodities reference (for structured ERP POs and future market mapping)
-INSERT INTO commodities (id, name, unit)
+-- Price providers (registry; yahoo is keyless)
+INSERT INTO price_providers (id, display_name, base_url, api_key_env, notes)
 VALUES
-  ('sugar', 'Sugar', 'lb'),
-  ('flour', 'Flour', 'lb'),
-  ('butter', 'Butter', 'lb'),
-  ('eggs', 'Eggs', 'dozen'),
-  ('vanilla', 'Vanilla Extract', 'oz'),
-  ('baking_soda', 'Baking Soda', 'lb'),
-  ('salt', 'Salt', 'lb'),
-  ('chocolate', 'Chocolate Chips', 'lb'),
-  ('milk', 'Milk', 'gal'),
-  ('yeast', 'Yeast', 'oz'),
-  ('oil', 'Vegetable Oil', 'gal'),
-  ('oats', 'Oats', 'lb')
-ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, unit = EXCLUDED.unit;
+  ('yahoo', 'Yahoo Finance', 'https://query1.finance.yahoo.com', NULL, 'Public endpoints for historical and daily prices')
+ON CONFLICT (id) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  base_url = EXCLUDED.base_url,
+  api_key_env = EXCLUDED.api_key_env,
+  notes = EXCLUDED.notes;
+
+-- Commodities reference (only traded instruments we can fetch)
+INSERT INTO commodities (id, name, display_name, unit, ticker, provider)
+VALUES
+  ('sugar', 'Sugar', 'Sugar #11', 'lb', 'SB=F', 'yahoo'),
+  ('wheat', 'Wheat', 'CBOT Wheat', 'bu', 'ZW=F', 'yahoo'),
+  ('cocoa', 'Cocoa', 'ICE Cocoa', 'mt', 'CC=F', 'yahoo'),
+  ('butter', 'Butter', 'CME Butter', 'lb', 'CB=F', 'yahoo'),
+  ('milk', 'Milk', 'Class III Milk', 'cwt', 'DA=F', 'yahoo'),
+  ('soybean_oil', 'Soybean Oil', 'Soybean Oil', 'lb', 'ZL=F', 'yahoo'),
+  ('oats', 'Oats', 'CBOT Oats', 'bu', 'ZO=F', 'yahoo'),
+  ('corn', 'Corn', 'CBOT Corn', 'bu', 'ZC=F', 'yahoo'),
+  ('coffee', 'Coffee', 'ICE Coffee', 'lb', 'KC=F', 'yahoo'),
+  ('cotton', 'Cotton', 'ICE Cotton', 'lb', 'CT=F', 'yahoo'),
+  ('orange_juice', 'Orange Juice', 'ICE Orange Juice', 'lb', 'OJ=F', 'yahoo'),
+  ('lumber', 'Lumber', 'CME Lumber', 'board_feet', 'LBS=F', 'yahoo')
+ON CONFLICT (id) DO UPDATE
+SET name = EXCLUDED.name,
+    display_name = EXCLUDED.display_name,
+    unit = EXCLUDED.unit,
+    ticker = EXCLUDED.ticker,
+    provider = EXCLUDED.provider;
 
 -- Initial inventory (weekly readout snapshot) for demo visibility.
 -- Uses the current week boundary so reruns are idempotent within the same week.
 INSERT INTO erp_inventory_snapshots (company_id, commodity_id, on_hand, unit, as_of)
 VALUES
-  ('00000000-0000-0000-0000-000000000001', 'sugar',       42000.000000, 'lb',    date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'flour',       38000.000000, 'lb',    date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'butter',       9000.000000, 'lb',    date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'eggs',         1800.000000, 'dozen', date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'vanilla',       650.000000, 'oz',    date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'baking_soda',   4200.000000, 'lb',    date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'salt',         5200.000000, 'lb',    date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'chocolate',     7200.000000, 'lb',    date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'milk',          1200.000000, 'gal',   date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'yeast',          420.000000, 'oz',    date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'oil',            980.000000, 'gal',   date_trunc('week', now())),
-  ('00000000-0000-0000-0000-000000000001', 'oats',         11000.000000, 'lb',    date_trunc('week', now()))
+  ('00000000-0000-0000-0000-000000000001', 'sugar',        42000.000000, 'lb',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'wheat',        32000.000000, 'bu',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'cocoa',         5200.000000, 'mt',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'butter',        9000.000000, 'lb',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'milk',          1200.000000, 'cwt',         date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'soybean_oil',   5200.000000, 'lb',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'oats',         11000.000000, 'bu',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'corn',         16000.000000, 'bu',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'coffee',        2600.000000, 'lb',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'cotton',        3100.000000, 'lb',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'orange_juice',  1800.000000, 'lb',          date_trunc('week', now())),
+  ('00000000-0000-0000-0000-000000000001', 'lumber',        1400.000000, 'board_feet',  date_trunc('week', now()))
 ON CONFLICT (company_id, commodity_id, as_of) DO UPDATE
 SET on_hand = EXCLUDED.on_hand,
     unit = EXCLUDED.unit;
