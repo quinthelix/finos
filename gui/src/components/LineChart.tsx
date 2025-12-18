@@ -515,8 +515,6 @@ export const LineChart: React.FC<Props> = ({
           const maxY = yAxis === 'right' ? maxYRight : maxYLeft
           const baseY = PADDING.top + chartHeight - ((0 - minY) / (maxY - minY || 1)) * chartHeight
           const heightPx = baseY - p.y
-          const matched = effectiveSeries.find(es => es.id === s.id)
-          const strokeColor = (p.strokeColor) || (matched && (matched as any).strokeColor) || '#ffffff';
           return (
             <rect
               key={`bar-${s.id}-${idx}`}
@@ -527,8 +525,7 @@ export const LineChart: React.FC<Props> = ({
               width={barWidth}
               height={Math.abs(heightPx)}
               fill={s.color}
-              stroke={strokeColor}
-              strokeWidth={2}
+              stroke="none"
               opacity={0.9}
               rx={3}
             />

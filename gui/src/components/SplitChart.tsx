@@ -144,7 +144,8 @@ export function SplitChart({
             refY="3.5"
             orient="auto"
           >
-            <path d="M0,0 L7,3.5 L0,7 Z" fill="currentColor" />
+            {/* Use the line's stroke color for the arrowhead */}
+            <path d="M0,0 L7,3.5 L0,7 Z" fill="context-stroke" stroke="context-stroke" />
           </marker>
         </defs>
         {arrows.map((a, i) => (
@@ -158,7 +159,6 @@ export function SplitChart({
             strokeWidth={1.5}
             strokeDasharray="4,4"
             opacity={0.9}
-            style={{ color: a.color }}
             markerEnd="url(#splitArrowHead)"
           />
         ))}

@@ -42,7 +42,8 @@ const DEFAULT_COMMODITIES: Array<{ id: string; name: string; unit: string; baseP
 const DEFAULT_INITIAL_INVENTORY: Record<string, number> = {
   sugar: 12000,
   wheat: 14000,
-  cocoa: 3000,
+  // Cocoa unit is mt; keep this in a sane range for a mid-size food manufacturer.
+  cocoa: 80,
   butter: 2600,
   milk: 1200,
   soybean_oil: 5200,
@@ -56,7 +57,8 @@ const DEFAULT_INITIAL_INVENTORY: Record<string, number> = {
 const DEFAULT_CONSUMPTION_PER_DAY: Record<string, number> = {
   sugar: 180,
   wheat: 240,
-  cocoa: 30,
+  // Cocoa in mt/day (≈500kg/day) so order totals don't dwarf everything else.
+  cocoa: 0.5,
   butter: 40,
   milk: 12,
   soybean_oil: 20,
@@ -66,8 +68,9 @@ const DEFAULT_CONSUMPTION_PER_DAY: Record<string, number> = {
   cotton: 14,
 };
 
+// Demo cadence: every ~2–5 months.
 const PURCHASE_INTERVAL_MIN_DAYS = 60;
-const PURCHASE_INTERVAL_MAX_DAYS = 90;
+const PURCHASE_INTERVAL_MAX_DAYS = 150;
 const EXECUTION_LAG_DAYS = 5;
 const DELIVERY_LAG_MIN_DAYS = 25;
 const DELIVERY_LAG_MAX_DAYS = 40;
@@ -106,6 +109,10 @@ function startOfMonthUTC(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
+function startOfDayUTC(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
+}
+
 export function createSimServer(options: SimOptions = {}) {
   const logger = options.logger ?? pino({ level: process.env.LOG_LEVEL || 'info' });
   const app = Fastify({ logger: logger as any });
@@ -126,6 +133,7 @@ export function createSimServer(options: SimOptions = {}) {
   const subscriptions = new Set<string>();
   const statusSchedule = new Map<string, StatusSchedule>();
   const nextPurchaseAt = new Map<string, Date>();
+  const purchaseCountByCommodity = new Map<string, number>();
   let interval: NodeJS.Timeout | null = null;
 
   function randomWithin(base: number, variationPct: number): number {
@@ -205,15 +213,30 @@ export function createSimServer(options: SimOptions = {}) {
     });
   }
 
+  function pickDemoQuality(commodityId: string): 'value' | 'fair' | 'overpay' {
+    // Deterministic but varied: cycle per commodity.
+    const n = purchaseCountByCommodity.get(commodityId) ?? 0;
+    purchaseCountByCommodity.set(commodityId, n + 1);
+    // Rough mix: 25% bad, 35% good, 40% fair.
+    const mod = n % 20;
+    if (mod === 3 || mod === 9 || mod === 16 || mod === 18 || mod === 19) return 'overpay';
+    if (mod === 1 || mod === 6 || mod === 7 || mod === 11 || mod === 13 || mod === 14 || mod === 17) return 'value';
+    return 'fair';
+  }
+
   function createPurchaseOrderForDate(commodity: (typeof commodities)[number], createdAt: Date): PurchaseOrder {
+    // Align purchases to daily market price points (00:00 UTC) for clean chart correlation.
+    const createdAtDay = startOfDayUTC(createdAt);
     const deliveryOffset = randomInt(DELIVERY_LAG_MIN_DAYS, DELIVERY_LAG_MAX_DAYS);
-    const deliveryDate = addDays(createdAt, deliveryOffset);
+    const deliveryDate = addDays(createdAtDay, deliveryOffset);
     // target ~2 months of cover with buffer to avoid stockout
     const daily = consumptionPerDay[commodity.id] ?? 10;
     const targetCoverDays = Math.max(SAFETY_STOCK_DAYS * SAFETY_STOCK_MULTIPLIER, 60);
     const monthlyNeed = daily * targetCoverDays;
     const quantity = randomWithin(monthlyNeed, 0.25);
-    const pricePerUnit = randomWithin(commodity.basePrice, 0.2);
+    const q = pickDemoQuality(commodity.id);
+    const mult = q === 'overpay' ? 1.22 : q === 'value' ? 0.82 : 1.0;
+    const pricePerUnit = randomWithin(commodity.basePrice * mult, 0.03);
 
     const po: PurchaseOrder = {
       id: randomUUID(),
@@ -225,7 +248,7 @@ export function createSimServer(options: SimOptions = {}) {
       pricePerUnit: Number(pricePerUnit.toFixed(4)),
       currency,
       deliveryDate: deliveryDate.toISOString(),
-      createdAt: createdAt.toISOString(),
+      createdAt: createdAtDay.toISOString(),
       status: 'in_approval',
     };
 
