@@ -13,6 +13,8 @@ import {
   ListInventorySnapshotsResponse,
   ListCurrentInventoryRequest,
   ListCurrentInventoryResponse,
+  ListCompanyCommoditiesRequest,
+  ListCompanyCommoditiesResponse,
 } from './generated/erp_extractor.js';
 
 type GrpcServerHandle = {
@@ -203,13 +205,67 @@ export async function startGrpcServer(pool: Pool, host: string, port: number): P
         callback(err, null);
       }
     },
+
+    listCompanyCommodities: async (
+      call: ServerUnaryCall<ListCompanyCommoditiesRequest, ListCompanyCommoditiesResponse>,
+      callback: sendUnaryData<ListCompanyCommoditiesResponse>
+    ) => {
+      try {
+        const companyId = call.request.companyId;
+        const res = await pool.query(
+          `
+          WITH used AS (
+            SELECT DISTINCT commodity_id
+            FROM erp_purchase_orders
+            WHERE company_id = $1
+            UNION
+            SELECT DISTINCT commodity_id
+            FROM erp_inventory_snapshots
+            WHERE company_id = $1
+          ),
+          named AS (
+            SELECT
+              u.commodity_id,
+              COALESCE(
+                MAX(c.display_name),
+                MAX(c.name),
+                u.commodity_id
+              ) AS commodity_name,
+              COALESCE(MAX(po.unit), MAX(s.unit), MAX(c.unit), '') AS unit
+            FROM used u
+            LEFT JOIN erp_purchase_orders po
+              ON po.company_id = $1 AND po.commodity_id = u.commodity_id
+            LEFT JOIN erp_inventory_snapshots s
+              ON s.company_id = $1 AND s.commodity_id = u.commodity_id
+            LEFT JOIN commodities c
+              ON c.id = u.commodity_id
+            GROUP BY u.commodity_id
+          )
+          SELECT commodity_id, commodity_name, unit
+          FROM named
+          ORDER BY commodity_id
+          `,
+          [companyId]
+        );
+
+        callback(null, {
+          commodities: res.rows.map((r: any) => ({
+            commodityId: r.commodity_id,
+            commodityName: r.commodity_name ?? r.commodity_id,
+            unit: r.unit ?? '',
+          })),
+        });
+      } catch (err: any) {
+        callback(err, null);
+      }
+    },
   };
 
   server.addService(ErpExtractorServiceService, serviceImpl);
 
   const bindAddress = `${host}:${port}`;
   await new Promise<void>((resolve, reject) => {
-    server.bindAsync(bindAddress, ServerCredentials.createInsecure(), (err) => {
+    server.bindAsync(bindAddress, ServerCredentials.createInsecure(), (err: Error | null) => {
       if (err) return reject(err);
       server.start();
       resolve();

@@ -27,6 +27,10 @@ export type InventoryItem = {
 export type CommoditySummary = {
   id: string
   name: string
+  ticker?: string
+  provider?: string
+  providerId?: string
+  emoji?: string
   totalOrders: number
   totalUnits: number
   totalCost: number
@@ -35,4 +39,21 @@ export type CommoditySummary = {
   minPrice: number
   maxPrice: number
   avgPrice: number
+}
+
+export type CommodityRegistryItem = {
+  id: string
+  name: string
+  displayName: string
+  unit: string
+  ticker: string
+  providerId: string
+  providerName: string
+  emoji: string
+}
+
+export type CompanyCommodity = {
+  commodityId: string
+  commodityName: string
+  unit: string
 }

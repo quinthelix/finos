@@ -36,6 +36,23 @@ export type MarketPricePoint = {
   asOf: string;
 };
 
+export type CommodityRegistryItem = {
+  id: string;
+  name: string;
+  displayName: string;
+  unit: string;
+  ticker: string;
+  providerId: string;
+  providerName: string;
+  emoji: string;
+};
+
+export type CompanyCommodity = {
+  commodityId: string;
+  commodityName: string;
+  unit: string;
+};
+
 export type CommoditySummary = {
   id: string;
   name: string;

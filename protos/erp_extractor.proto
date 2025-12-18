@@ -69,9 +69,24 @@ message ListCurrentInventoryResponse {
   repeated InventorySnapshot snapshots = 1;
 }
 
+message CompanyCommodity {
+  string commodity_id = 1;
+  string commodity_name = 2;
+  string unit = 3;
+}
+
+message ListCompanyCommoditiesRequest {
+  string company_id = 1;
+}
+
+message ListCompanyCommoditiesResponse {
+  repeated CompanyCommodity commodities = 1;
+}
+
 service ErpExtractorService {
   rpc ListPurchaseOrders(ListPurchaseOrdersRequest) returns (ListPurchaseOrdersResponse);
   rpc GetPurchaseOrder(GetPurchaseOrderRequest) returns (PurchaseOrder);
   rpc ListInventorySnapshots(ListInventorySnapshotsRequest) returns (ListInventorySnapshotsResponse);
   rpc ListCurrentInventory(ListCurrentInventoryRequest) returns (ListCurrentInventoryResponse);
+  rpc ListCompanyCommodities(ListCompanyCommoditiesRequest) returns (ListCompanyCommoditiesResponse);
 }

@@ -8,11 +8,15 @@ import {
   ListCurrentInventoryRequest,
   ListInventorySnapshotsRequest,
   InventorySnapshot,
+  ListCompanyCommoditiesRequest,
+  CompanyCommodity,
 } from './generated/erp_extractor.js';
 import {
   MarketDataServiceClient,
   ListPricesRequest,
   PricePoint,
+  ListCommoditiesRequest,
+  Commodity,
 } from './generated/market_data.js';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -136,6 +140,63 @@ app.get('/api/company/:companyId/inventory-snapshots', async (request, reply) =>
     onHand: s.onHand,
     unit: s.unit,
     asOf: s.asOf?.toISOString(),
+  }));
+
+  return reply.send({ data });
+});
+
+app.get('/api/company/:companyId/commodities', async (request, reply) => {
+  const { companyId } = request.params as { companyId: string };
+
+  const req: ListCompanyCommoditiesRequest = {
+    companyId: companyId || defaultCompanyId,
+  };
+
+  const client = erpClient;
+  if (!client) throw new Error('ERP client not initialized');
+
+  const res = await new Promise<{ commodities: CompanyCommodity[] }>((resolve, reject) => {
+    client.listCompanyCommodities(req, (err, response) => {
+      if (err || !response) return reject(err || new Error('no response'));
+      resolve(response);
+    });
+  });
+
+  const data = res.commodities.map((c) => ({
+    commodityId: c.commodityId,
+    commodityName: c.commodityName,
+    unit: c.unit,
+  }));
+
+  return reply.send({ data });
+});
+
+app.get('/api/commodities', async (request, reply) => {
+  const providerId = (request.query as { providerId?: string }).providerId || '';
+
+  const req: ListCommoditiesRequest = {
+    providerId,
+  };
+
+  const client = marketClient;
+  if (!client) throw new Error('Market client not initialized');
+
+  const res = await new Promise<{ commodities: Commodity[] }>((resolve, reject) => {
+    client.listCommodities(req, (err, response) => {
+      if (err || !response) return reject(err || new Error('no response'));
+      resolve(response);
+    });
+  });
+
+  const data = res.commodities.map((c) => ({
+    id: c.id,
+    name: c.name,
+    displayName: c.displayName,
+    unit: c.unit,
+    ticker: c.ticker,
+    providerId: c.providerId,
+    providerName: c.providerName,
+    emoji: c.emoji,
   }));
 
   return reply.send({ data });

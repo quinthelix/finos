@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './index.css'
 import log from 'loglevel'
-import { fetchInventory, fetchInventorySnapshots, fetchMarketPrices, fetchPurchaseOrders } from './api'
+import {
+  fetchCommodityRegistry,
+  fetchCompanyCommodities,
+  fetchInventory,
+  fetchInventorySnapshots,
+  fetchMarketPrices,
+  fetchPurchaseOrders,
+} from './api'
 import type { InventoryItem, PurchaseOrder, CommoditySummary } from './types'
-import { LineChart, SERIES_COLORS } from './components/LineChart'
+import { LineChart } from './components/LineChart'
 import type { Point, Series } from './components/LineChart'
 import { SplitChart } from './components/SplitChart'
+import { buildCommodityColorMap } from './domain/colors'
 
 type NavId = 'commodities' | 'positions' | 'trade'
 
@@ -23,40 +31,7 @@ const DURATIONS = [
   { id: 'all', label: 'All', days: 0 },
 ]
 
-// Emoji mapping for commodities
-const COMMODITY_EMOJIS: Record<string, string> = {
-  sugar: '🍬',
-  flour: '🌾',
-  butter: '🧈',
-  eggs: '🥚',
-  vanilla: '🌸',
-  baking_soda: '🧂',
-  salt: '🧂',
-  chocolate: '🍫',
-  milk: '🥛',
-  yeast: '🍞',
-  oil: '🫒',
-  oats: '🥣',
-  default: '📦',
-}
-
-// Preferred palette for known commodities; ensures stable colors across app
-const COMMODITY_COLORS: Record<string, string> = {
-  chocolate: '#0ea5e9',
-  butter: '#f59e0b',
-  sugar: '#ec4899',
-  flour: '#8b5cf6',
-  eggs: '#eab308',
-  vanilla: '#c084fc',
-  baking_soda: '#a855f7',
-  salt: '#38bdf8',
-  milk: '#60a5fa',
-  yeast: '#fb7185',
-  oil: '#fb923c',
-  oats: '#d97706',
-};
-
-const FORBIDDEN_COLORS = new Set(['#ef4444', '#00d4aa', '#ffffff', '#10b981', '#84cc16']);
+// Commodity metadata (names/ticker/provider/emoji) must be discovered from the DB via API.
 
 // Finos Logo - Yin-Yang style with f, i, n, o, s
 function FinosLogo() {
@@ -140,16 +115,6 @@ function FinosLogo() {
   )
 }
 
-function getCommodityEmoji(commodityId: string): string {
-  const normalized = commodityId.toLowerCase().replace(/[_-]/g, '')
-  for (const [key, emoji] of Object.entries(COMMODITY_EMOJIS)) {
-    if (normalized.includes(key.replace(/_/g, ''))) {
-      return emoji
-    }
-  }
-  return COMMODITY_EMOJIS.default
-}
-
 function NavIcon({ type }: { type: string }) {
   switch (type) {
     case 'chart':
@@ -226,25 +191,6 @@ function groupCommodities(purchaseOrders: PurchaseOrder[]): CommoditySummary[] {
     .sort((a, b) => b.totalCost - a.totalCost)
 }
 
-function hashColor(key: string): string {
-  // Simple deterministic hash → HSL color
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    hash = (hash << 5) - hash + key.charCodeAt(i);
-    hash |= 0; // to 32bit
-  }
-  let hue = Math.abs(hash) % 360;
-  let color = `hsl(${hue}, 65%, 55%)`;
-  // Avoid forbidden exact matches by nudging hue
-  let attempts = 0;
-  while (FORBIDDEN_COLORS.has(color.toLowerCase()) && attempts < 5) {
-    hue = (hue + 37) % 360;
-    color = `hsl(${hue}, 65%, 55%)`;
-    attempts++;
-  }
-  return color;
-}
-
 function filterByDuration(orders: PurchaseOrder[], days: number): PurchaseOrder[] {
   if (days === 0) return orders
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
@@ -314,12 +260,25 @@ function CommoditiesView({
   orders,
   inventory,
   inventorySnapshots,
+  commodityRegistry,
+  companyCommodities,
   loading,
   error,
 }: {
   orders: PurchaseOrder[]
   inventory: InventoryItem[]
   inventorySnapshots: InventoryItem[]
+  commodityRegistry: Array<{
+    id: string
+    name: string
+    displayName: string
+    unit: string
+    ticker: string
+    providerId: string
+    providerName: string
+    emoji: string
+  }>
+  companyCommodities: Array<{ commodityId: string; commodityName: string; unit: string }>
   loading: boolean
   error: string | null
 }) {
@@ -332,6 +291,26 @@ function CommoditiesView({
   const [marketPrices, setMarketPrices] = useState<
     { commodityId: string; price: number; currency: string; unit: string; source: string; asOf: string }[]
   >([])
+
+  const registryById = useMemo(() => {
+    const m = new Map<string, (typeof commodityRegistry)[number]>()
+    for (const c of commodityRegistry) {
+      if (c?.id) m.set(String(c.id).toLowerCase(), c)
+    }
+    return m
+  }, [commodityRegistry])
+
+  const companyCommodityIds = useMemo(() => {
+    return (companyCommodities || []).map((c) => String(c.commodityId)).filter(Boolean)
+  }, [companyCommodities])
+
+  const getCommodityEmoji = useCallback(
+    (commodityId: string): string => {
+      const c = registryById.get(commodityId.toLowerCase())
+      return c?.emoji || '📦'
+    },
+    [registryById]
+  )
 
   // Filter ALL orders by duration first
   const filteredOrders = useMemo(() => {
@@ -381,23 +360,7 @@ function CommoditiesView({
 
   // Create color map for commodities
   const commodityColors = useMemo(() => {
-    const colors = new Map<string, string>()
-    const used = new Set<string>()
-    commodities.forEach((c) => {
-      const key = c.id.toLowerCase()
-      let color: string | undefined = COMMODITY_COLORS[key]
-      if (color && (used.has(color) || FORBIDDEN_COLORS.has(color.toLowerCase()))) {
-        color = undefined
-      }
-      if (!color) {
-        // pick from series palette if available and unused
-        const paletteColor = SERIES_COLORS.find((col) => !used.has(col) && !FORBIDDEN_COLORS.has(col.toLowerCase()))
-        color = paletteColor || hashColor(key)
-      }
-      used.add(color)
-      colors.set(key, color)
-    })
-    return colors
+    return buildCommodityColorMap(commodities.map((c) => c.id))
   }, [commodities])
 
   // Auto-select first commodity when data loads (single mode)
@@ -692,11 +655,18 @@ function CommoditiesView({
           
           <div className="list">
             {commodities.map((c) => {
+              if (companyCommodityIds.length > 0 && !companyCommodityIds.includes(c.id)) {
+                return null
+              }
               const isSelected = overlayMode 
                 ? overlaySelection.has(c.id)
                 : selectedCommodity === c.id
-              const color = commodityColors.get(c.id.toLowerCase()) || SERIES_COLORS[0]
+              const color = commodityColors.get(c.id.toLowerCase()) || '#3b82f6'
               const inv = inventoryByCommodity.get(c.id)
+              const meta = registryById.get(c.id.toLowerCase())
+              const displayName = meta?.displayName || c.name
+              const ticker = meta?.ticker
+              const providerName = meta?.providerName
               const cardStyle: React.CSSProperties = isSelected
                 ? {
                     borderColor: color,
@@ -727,13 +697,21 @@ function CommoditiesView({
                       />
                     )}
                     <span className="commodity-emoji">{getCommodityEmoji(c.id)}</span>
-                    <span className="commodity-name">{c.name}</span>
+                    <span className="commodity-name">{displayName}</span>
                   </div>
                   
                   <div className="commodity-stats">
                     <div className="stat-row">
                       <span className="stat-label">Orders</span>
                       <span className="stat-value">{c.totalOrders}</span>
+                    </div>
+                    <div className="stat-row">
+                      <span className="stat-label">Ticker</span>
+                      <span className="stat-value">{ticker || '—'}</span>
+                    </div>
+                    <div className="stat-row">
+                      <span className="stat-label">Provider</span>
+                      <span className="stat-value">{providerName || '—'}</span>
                     </div>
                     <div className="stat-row">
                       <span className="stat-label">Total Units</span>
@@ -809,7 +787,9 @@ function CommoditiesView({
               <div className="chart-title">
                 <span className="commodity-emoji large">{getCommodityEmoji(selectedCommodityData.id)}</span>
                 <div>
-                  <h3>{selectedCommodityData.name}</h3>
+                  <h3>
+                    {registryById.get(selectedCommodityData.id.toLowerCase())?.displayName || selectedCommodityData.name}
+                  </h3>
                   <span className="chart-subtitle">
                     Cost over time ({durationLabel})
                   </span>
@@ -934,6 +914,21 @@ export default function App() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([])
   const [inventory, setInventory] = useState<InventoryItem[]>([])
   const [inventorySnapshots, setInventorySnapshots] = useState<InventoryItem[]>([])
+  const [commodityRegistry, setCommodityRegistry] = useState<
+    Array<{
+      id: string
+      name: string
+      displayName: string
+      unit: string
+      ticker: string
+      providerId: string
+      providerName: string
+      emoji: string
+    }>
+  >([])
+  const [companyCommodities, setCompanyCommodities] = useState<
+    Array<{ commodityId: string; commodityName: string; unit: string }>
+  >([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -941,14 +936,18 @@ export default function App() {
     async function load() {
       setLoading(true)
       try {
-        const [ordersData, inventoryData, inventorySnapshotsData] = await Promise.all([
+        const [ordersData, inventoryData, inventorySnapshotsData, registryData, companyCommoditiesData] = await Promise.all([
           fetchPurchaseOrders(),
           fetchInventory(),
           fetchInventorySnapshots(),
+          fetchCommodityRegistry(),
+          fetchCompanyCommodities(),
         ])
         setOrders(ordersData)
         setInventory(inventoryData)
         setInventorySnapshots(inventorySnapshotsData)
+        setCommodityRegistry(registryData as any)
+        setCompanyCommodities(companyCommoditiesData as any)
       } catch (err) {
         log.error('Failed to load data', err)
         setError('Failed to load data')
@@ -1006,6 +1005,8 @@ export default function App() {
             orders={orders}
             inventory={inventory}
             inventorySnapshots={inventorySnapshots}
+            commodityRegistry={commodityRegistry}
+            companyCommodities={companyCommodities}
             loading={loading}
             error={error}
           />

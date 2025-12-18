@@ -13,10 +13,13 @@ import {
 
 type CommodityRow = {
   id: string;
+  name: string;
   display_name: string;
   unit: string;
   ticker: string;
   provider: string;
+  provider_name?: string;
+  emoji: string;
 };
 
 type PriceSample = {
@@ -35,10 +38,19 @@ const PORT = Number(process.env.PORT || 50060);
 
 async function loadCommodities(provider: string): Promise<CommodityRow[]> {
   const res = await pool.query<CommodityRow>(
-    `SELECT id, display_name, unit, ticker, provider
-     FROM commodities
-     WHERE provider = $1
-     ORDER BY id`,
+    `SELECT
+        c.id,
+        c.name,
+        c.display_name,
+        c.unit,
+        c.ticker,
+        c.provider,
+        COALESCE(p.display_name, c.provider) as provider_name,
+        COALESCE(c.emoji, '📦') as emoji
+     FROM commodities c
+     LEFT JOIN price_providers p ON p.id = c.provider
+     WHERE c.provider = $1
+     ORDER BY c.id`,
     [provider]
   );
   return res.rows;
@@ -169,6 +181,44 @@ const serviceImpl: MarketDataServiceServer = {
       return callback(null, response);
     } catch (err) {
       logger.error({ err }, 'listPrices failed');
+      return callback(err as Error, null as any);
+    }
+  },
+  listCommodities: async (call, callback) => {
+    const req = call.request;
+    const providerId = req.providerId || DEFAULT_PROVIDER;
+    try {
+      const rows = await pool.query<CommodityRow>(
+        `SELECT
+            c.id,
+            c.name,
+            c.display_name,
+            c.unit,
+            c.ticker,
+            c.provider,
+            COALESCE(p.display_name, c.provider) as provider_name,
+            COALESCE(c.emoji, '📦') as emoji
+         FROM commodities c
+         LEFT JOIN price_providers p ON p.id = c.provider
+         WHERE ($1::text = '' OR c.provider = $1)
+         ORDER BY c.id`,
+        [providerId ?? '']
+      );
+
+      return callback(null, {
+        commodities: rows.rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          displayName: r.display_name,
+          unit: r.unit,
+          ticker: r.ticker,
+          providerId: r.provider,
+          providerName: r.provider_name || r.provider,
+          emoji: r.emoji,
+        })),
+      });
+    } catch (err) {
+      logger.error({ err }, 'listCommodities failed');
       return callback(err as Error, null as any);
     }
   },

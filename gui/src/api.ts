@@ -1,4 +1,10 @@
-import type { Purchase, InventorySnapshot, MarketPricePoint } from './domain/types';
+import type {
+  Purchase,
+  InventorySnapshot,
+  MarketPricePoint,
+  CommodityRegistryItem,
+  CompanyCommodity,
+} from './domain/types';
 
 const API_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:8080';
 const COMPANY_ID = import.meta.env.VITE_COMPANY_ID || '00000000-0000-0000-0000-000000000001';
@@ -49,5 +55,29 @@ export async function fetchMarketPrices(params: {
     throw new Error(`fetch failed ${res.status}`);
   }
   const body = (await res.json()) as { data: MarketPricePoint[] };
+  return body.data || [];
+}
+
+export async function fetchCommodityRegistry(params?: {
+  providerId?: string;
+}): Promise<CommodityRegistryItem[]> {
+  const search = new URLSearchParams();
+  if (params?.providerId) search.set('providerId', params.providerId);
+  const url = `${API_URL}/api/commodities${search.toString() ? `?${search}` : ''}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`fetch failed ${res.status}`);
+  }
+  const body = (await res.json()) as { data: CommodityRegistryItem[] };
+  return body.data || [];
+}
+
+export async function fetchCompanyCommodities(): Promise<CompanyCommodity[]> {
+  const url = `${API_URL}/api/company/${COMPANY_ID}/commodities`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`fetch failed ${res.status}`);
+  }
+  const body = (await res.json()) as { data: CompanyCommodity[] };
   return body.data || [];
 }

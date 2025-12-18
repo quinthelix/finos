@@ -124,6 +124,20 @@ export interface ListCurrentInventoryResponse {
   snapshots: InventorySnapshot[];
 }
 
+export interface CompanyCommodity {
+  commodityId: string;
+  commodityName: string;
+  unit: string;
+}
+
+export interface ListCompanyCommoditiesRequest {
+  companyId: string;
+}
+
+export interface ListCompanyCommoditiesResponse {
+  commodities: CompanyCommodity[];
+}
+
 function createBasePurchaseOrder(): PurchaseOrder {
   return {
     id: "",
@@ -990,6 +1004,217 @@ export const ListCurrentInventoryResponse = {
   },
 };
 
+function createBaseCompanyCommodity(): CompanyCommodity {
+  return { commodityId: "", commodityName: "", unit: "" };
+}
+
+export const CompanyCommodity = {
+  encode(message: CompanyCommodity, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.commodityId !== "") {
+      writer.uint32(10).string(message.commodityId);
+    }
+    if (message.commodityName !== "") {
+      writer.uint32(18).string(message.commodityName);
+    }
+    if (message.unit !== "") {
+      writer.uint32(26).string(message.unit);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): CompanyCommodity {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCompanyCommodity();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.commodityId = reader.string();
+          continue;
+        case 2:
+          if (tag !== 18) {
+            break;
+          }
+
+          message.commodityName = reader.string();
+          continue;
+        case 3:
+          if (tag !== 26) {
+            break;
+          }
+
+          message.unit = reader.string();
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): CompanyCommodity {
+    return {
+      commodityId: isSet(object.commodityId) ? globalThis.String(object.commodityId) : "",
+      commodityName: isSet(object.commodityName) ? globalThis.String(object.commodityName) : "",
+      unit: isSet(object.unit) ? globalThis.String(object.unit) : "",
+    };
+  },
+
+  toJSON(message: CompanyCommodity): unknown {
+    const obj: any = {};
+    if (message.commodityId !== "") {
+      obj.commodityId = message.commodityId;
+    }
+    if (message.commodityName !== "") {
+      obj.commodityName = message.commodityName;
+    }
+    if (message.unit !== "") {
+      obj.unit = message.unit;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<CompanyCommodity>, I>>(base?: I): CompanyCommodity {
+    return CompanyCommodity.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<CompanyCommodity>, I>>(object: I): CompanyCommodity {
+    const message = createBaseCompanyCommodity();
+    message.commodityId = object.commodityId ?? "";
+    message.commodityName = object.commodityName ?? "";
+    message.unit = object.unit ?? "";
+    return message;
+  },
+};
+
+function createBaseListCompanyCommoditiesRequest(): ListCompanyCommoditiesRequest {
+  return { companyId: "" };
+}
+
+export const ListCompanyCommoditiesRequest = {
+  encode(message: ListCompanyCommoditiesRequest, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    if (message.companyId !== "") {
+      writer.uint32(10).string(message.companyId);
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): ListCompanyCommoditiesRequest {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListCompanyCommoditiesRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.companyId = reader.string();
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListCompanyCommoditiesRequest {
+    return { companyId: isSet(object.companyId) ? globalThis.String(object.companyId) : "" };
+  },
+
+  toJSON(message: ListCompanyCommoditiesRequest): unknown {
+    const obj: any = {};
+    if (message.companyId !== "") {
+      obj.companyId = message.companyId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListCompanyCommoditiesRequest>, I>>(base?: I): ListCompanyCommoditiesRequest {
+    return ListCompanyCommoditiesRequest.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListCompanyCommoditiesRequest>, I>>(
+    object: I,
+  ): ListCompanyCommoditiesRequest {
+    const message = createBaseListCompanyCommoditiesRequest();
+    message.companyId = object.companyId ?? "";
+    return message;
+  },
+};
+
+function createBaseListCompanyCommoditiesResponse(): ListCompanyCommoditiesResponse {
+  return { commodities: [] };
+}
+
+export const ListCompanyCommoditiesResponse = {
+  encode(message: ListCompanyCommoditiesResponse, writer: _m0.Writer = _m0.Writer.create()): _m0.Writer {
+    for (const v of message.commodities) {
+      CompanyCommodity.encode(v!, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+
+  decode(input: _m0.Reader | Uint8Array, length?: number): ListCompanyCommoditiesResponse {
+    const reader = input instanceof _m0.Reader ? input : _m0.Reader.create(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseListCompanyCommoditiesResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          if (tag !== 10) {
+            break;
+          }
+
+          message.commodities.push(CompanyCommodity.decode(reader, reader.uint32()));
+          continue;
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skipType(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ListCompanyCommoditiesResponse {
+    return {
+      commodities: globalThis.Array.isArray(object?.commodities)
+        ? object.commodities.map((e: any) => CompanyCommodity.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: ListCompanyCommoditiesResponse): unknown {
+    const obj: any = {};
+    if (message.commodities?.length) {
+      obj.commodities = message.commodities.map((e) => CompanyCommodity.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ListCompanyCommoditiesResponse>, I>>(base?: I): ListCompanyCommoditiesResponse {
+    return ListCompanyCommoditiesResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ListCompanyCommoditiesResponse>, I>>(
+    object: I,
+  ): ListCompanyCommoditiesResponse {
+    const message = createBaseListCompanyCommoditiesResponse();
+    message.commodities = object.commodities?.map((e) => CompanyCommodity.fromPartial(e)) || [];
+    return message;
+  },
+};
+
 export type ErpExtractorServiceService = typeof ErpExtractorServiceService;
 export const ErpExtractorServiceService = {
   listPurchaseOrders: {
@@ -1034,6 +1259,17 @@ export const ErpExtractorServiceService = {
       Buffer.from(ListCurrentInventoryResponse.encode(value).finish()),
     responseDeserialize: (value: Buffer) => ListCurrentInventoryResponse.decode(value),
   },
+  listCompanyCommodities: {
+    path: "/erp.ErpExtractorService/ListCompanyCommodities",
+    requestStream: false,
+    responseStream: false,
+    requestSerialize: (value: ListCompanyCommoditiesRequest) =>
+      Buffer.from(ListCompanyCommoditiesRequest.encode(value).finish()),
+    requestDeserialize: (value: Buffer) => ListCompanyCommoditiesRequest.decode(value),
+    responseSerialize: (value: ListCompanyCommoditiesResponse) =>
+      Buffer.from(ListCompanyCommoditiesResponse.encode(value).finish()),
+    responseDeserialize: (value: Buffer) => ListCompanyCommoditiesResponse.decode(value),
+  },
 } as const;
 
 export interface ErpExtractorServiceServer extends UntypedServiceImplementation {
@@ -1041,6 +1277,7 @@ export interface ErpExtractorServiceServer extends UntypedServiceImplementation 
   getPurchaseOrder: handleUnaryCall<GetPurchaseOrderRequest, PurchaseOrder>;
   listInventorySnapshots: handleUnaryCall<ListInventorySnapshotsRequest, ListInventorySnapshotsResponse>;
   listCurrentInventory: handleUnaryCall<ListCurrentInventoryRequest, ListCurrentInventoryResponse>;
+  listCompanyCommodities: handleUnaryCall<ListCompanyCommoditiesRequest, ListCompanyCommoditiesResponse>;
 }
 
 export interface ErpExtractorServiceClient extends Client {
@@ -1103,6 +1340,21 @@ export interface ErpExtractorServiceClient extends Client {
     metadata: Metadata,
     options: Partial<CallOptions>,
     callback: (error: ServiceError | null, response: ListCurrentInventoryResponse) => void,
+  ): ClientUnaryCall;
+  listCompanyCommodities(
+    request: ListCompanyCommoditiesRequest,
+    callback: (error: ServiceError | null, response: ListCompanyCommoditiesResponse) => void,
+  ): ClientUnaryCall;
+  listCompanyCommodities(
+    request: ListCompanyCommoditiesRequest,
+    metadata: Metadata,
+    callback: (error: ServiceError | null, response: ListCompanyCommoditiesResponse) => void,
+  ): ClientUnaryCall;
+  listCompanyCommodities(
+    request: ListCompanyCommoditiesRequest,
+    metadata: Metadata,
+    options: Partial<CallOptions>,
+    callback: (error: ServiceError | null, response: ListCompanyCommoditiesResponse) => void,
   ): ClientUnaryCall;
 }
 

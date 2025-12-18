@@ -32,7 +32,28 @@ message GetLatestPriceResponse {
   PricePoint price = 1;
 }
 
+message Commodity {
+  string id = 1;
+  string name = 2;
+  string display_name = 3;
+  string unit = 4;
+  string ticker = 5;
+  string provider_id = 6;
+  string provider_name = 7;
+  string emoji = 8;
+}
+
+message ListCommoditiesRequest {
+  // Optional provider filter (e.g. "yahoo")
+  string provider_id = 1;
+}
+
+message ListCommoditiesResponse {
+  repeated Commodity commodities = 1;
+}
+
 service MarketDataService {
   rpc ListPrices(ListPricesRequest) returns (ListPricesResponse);
   rpc GetLatestPrice(GetLatestPriceRequest) returns (GetLatestPriceResponse);
+  rpc ListCommodities(ListCommoditiesRequest) returns (ListCommoditiesResponse);
 }

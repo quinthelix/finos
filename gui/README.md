@@ -1,73 +1,114 @@
-# React + TypeScript + Vite
+# GUI (`gui/`)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The GUI is a **React SPA** (TypeScript + Vite) that acts as the user-facing dashboard for the commodity hedging platform.
 
-Currently, two official plugins are available:
+### Architectural rules
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- The GUI must talk **only** to the `api-gateway` over REST/JSON.
+- No direct calls to internal services (e.g., `erp-extractor`, `commodity-scraper`) and no direct DB access.
 
-## React Compiler
+### Running locally
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+With Docker (recommended for consistency):
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+docker compose up -d --build gui
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Or in dev mode (hot reload):
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+cd gui
+npm install
+npm run dev
 ```
+
+### Environment variables
+
+- `VITE_API_GATEWAY_URL`: API gateway base URL (default `http://localhost:8080`)
+- `VITE_COMPANY_ID`: demo company UUID (Phase 0)
+
+### Key modules and responsibilities
+
+#### API layer
+
+- `src/api.ts`
+  - Fetches REST data from `api-gateway`:
+    - purchase orders
+    - current inventory
+    - inventory snapshots (history)
+    - market prices (commodity price chart)
+
+#### Domain types and utilities
+
+- `src/domain/types.ts`: shared domain shapes used by `src/api.ts`
+- `src/domain/colors.ts`: stable commodity color palette + quality colors
+- `src/domain/formatters.ts`: formatting helpers (used where applicable)
+- `src/services/purchases.ts`: pure helpers (grouping, quality tagging, inventory mapping)
+
+Note: `src/types.ts` also exists and is currently used in parts of `src/App.tsx`. Long-term we should consolidate types to `src/domain/types.ts`.
+
+#### Charts and visualization
+
+- `src/components/LineChart.tsx`
+  - Renders line and bar series in SVG.
+  - Supports:
+    - multiple series (overlay mode)
+    - dual Y-axis (cost left, inventory right)
+    - straight-line segments (no smoothing)
+    - hover crosshair with interpolated values
+    - `pinnedX` to keep the crosshair pinned when selecting a purchase from the table
+    - `xDomain` to force multiple charts to share the same X span
+
+- `src/components/SplitChart.tsx`
+  - Composes two `LineChart` instances:
+    - top: purchases (bars) + inventory (dashed)
+    - bottom: commodity unit price (line)
+  - Overlays **dashed connector arrows** from quality-colored price dots to the purchase bar baseline.
+  - Price dots are **downsampled to weekly points** to avoid clutter; arrows and quality matching are also done per-week.
+
+#### Application composition
+
+- `src/App.tsx`
+  - Implements navigation (Commodities / Positions / Trade).
+  - Commodities view:
+    - loads orders + inventory + market prices
+    - computes purchase “quality” using a rolling median window and a ±10% band (good/fair/bad)
+    - renders `SplitChart` and the purchase table; clicking a row pins the crosshair
+
+### Design diagram (Mermaid)
+
+```mermaid
+flowchart TB
+  subgraph GUI[gui (React SPA)]
+    App[src/App.tsx]
+    API[src/api.ts]
+    Types[src/domain/types.ts]
+    Colors[src/domain/colors.ts]
+    LineChart[src/components/LineChart.tsx]
+    SplitChart[src/components/SplitChart.tsx]
+  end
+
+  App -->|fetches| API
+  API --> Types
+  App --> Colors
+  App --> SplitChart
+  SplitChart --> LineChart
+  SplitChart -->|top panel| LineChart
+  SplitChart -->|bottom panel| LineChart
+
+  subgraph Gateway[services/api-gateway]
+    GW[REST endpoints]
+  end
+
+  App -->|REST/JSON| GW
+
+  GW -->|purchase orders| App
+  GW -->|inventory snapshots| App
+  GW -->|market prices| App
+```
+
+### Testing
+
+- Framework: **Vitest**
+- Entry: `src/App.test.tsx` (and future unit tests for pure helpers / components)

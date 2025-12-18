@@ -32,24 +32,25 @@ ON CONFLICT (id) DO UPDATE SET
   notes = EXCLUDED.notes;
 
 -- Commodities reference (only traded instruments we can fetch)
-INSERT INTO commodities (id, name, display_name, unit, ticker, provider)
+INSERT INTO commodities (id, name, display_name, unit, ticker, provider, emoji)
 VALUES
-  ('sugar', 'Sugar', 'Sugar #11', 'lb', 'SB=F', 'yahoo'),
-  ('wheat', 'Wheat', 'CBOT Wheat', 'bu', 'ZW=F', 'yahoo'),
-  ('cocoa', 'Cocoa', 'ICE Cocoa', 'mt', 'CC=F', 'yahoo'),
-  ('butter', 'Butter', 'CME Butter', 'lb', 'CB=F', 'yahoo'),
-  ('milk', 'Milk', 'Class III Milk', 'cwt', 'DA=F', 'yahoo'),
-  ('soybean_oil', 'Soybean Oil', 'Soybean Oil', 'lb', 'ZL=F', 'yahoo'),
-  ('oats', 'Oats', 'CBOT Oats', 'bu', 'ZO=F', 'yahoo'),
-  ('corn', 'Corn', 'CBOT Corn', 'bu', 'ZC=F', 'yahoo'),
-  ('coffee', 'Coffee', 'ICE Coffee', 'lb', 'KC=F', 'yahoo'),
-  ('cotton', 'Cotton', 'ICE Cotton', 'lb', 'CT=F', 'yahoo')
+  ('sugar', 'Sugar', 'Sugar #11', 'lb', 'SB=F', 'yahoo', '🍬'),
+  ('wheat', 'Wheat', 'CBOT Wheat', 'bu', 'ZW=F', 'yahoo', '🌾'),
+  ('cocoa', 'Cocoa', 'ICE Cocoa', 'mt', 'CC=F', 'yahoo', '🍫'),
+  ('butter', 'Butter', 'CME Butter', 'lb', 'CB=F', 'yahoo', '🧈'),
+  ('milk', 'Milk', 'Class III Milk', 'cwt', 'DA=F', 'yahoo', '🥛'),
+  ('soybean_oil', 'Soybean Oil', 'Soybean Oil', 'lb', 'ZL=F', 'yahoo', '🫒'),
+  ('oats', 'Oats', 'CBOT Oats', 'bu', 'ZO=F', 'yahoo', '🥣'),
+  ('corn', 'Corn', 'CBOT Corn', 'bu', 'ZC=F', 'yahoo', '🌽'),
+  ('coffee', 'Coffee', 'ICE Coffee', 'lb', 'KC=F', 'yahoo', '☕'),
+  ('cotton', 'Cotton', 'ICE Cotton', 'lb', 'CT=F', 'yahoo', '🧵')
 ON CONFLICT (id) DO UPDATE
 SET name = EXCLUDED.name,
     display_name = EXCLUDED.display_name,
     unit = EXCLUDED.unit,
     ticker = EXCLUDED.ticker,
-    provider = EXCLUDED.provider;
+    provider = EXCLUDED.provider,
+    emoji = EXCLUDED.emoji;
 
 -- Example market data (seeded daily prices) so the GUI always has a visible price line,
 -- even before the commodity-scraper finishes fetching external history.
