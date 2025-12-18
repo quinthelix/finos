@@ -8,9 +8,9 @@ Place SQL migrations in `db/migrations/` with numeric prefixes (e.g., `0001_init
 - `0003_raw_unique_index.sql` (unique index on raw ERP POs)
 - `0004_raw_erp_unique_column.sql` (generated erp_record_id + unique constraint)
 - `0005_erp_inventory.sql` (inventory snapshots)
-- `0005_status_defaults.sql` (status defaults)
-- `0006_raw_erp_record_id_generated.sql` (generated raw erp id)
-- `0007_commodity_ticker_provider.sql` (provider registry + ticker fields on commodities)
+- `0006_status_defaults.sql` (status defaults)
+- `0007_raw_erp_record_id_generated.sql` (generated raw erp id)
+- `0008_commodity_ticker_provider.sql` (provider registry + ticker fields on commodities)
 
 ### Running Migrations Automatically
 

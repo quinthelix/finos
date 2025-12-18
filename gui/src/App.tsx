@@ -263,6 +263,15 @@ function formatNumber(value: number): string {
   return value.toFixed(0)
 }
 
+function weekKey(d: Date): string {
+  // ISO-ish week start: Monday 00:00 UTC
+  const day = d.getUTCDay() // 0..6 (Sun..Sat)
+  const diff = (day + 6) % 7 // 0 for Mon, 6 for Sun
+  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0))
+  start.setUTCDate(start.getUTCDate() - diff)
+  return start.toISOString().slice(0, 10)
+}
+
 function hexToRgba(hex: string, alpha: number): string {
   // Supports #RRGGBB
   const cleaned = hex.replace('#', '')
@@ -442,7 +451,6 @@ function CommoditiesView({
       return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
     }
 
-    const dayKey = (d: Date) => d.toISOString().slice(0, 10)
     const pricesSorted = marketPrices
       .map((p) => ({ t: new Date(p.asOf).getTime(), y: p.price }))
       .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.y))
@@ -468,8 +476,6 @@ function CommoditiesView({
           if (quality === 'value') qualityColor = '#10b981'
           if (quality === 'fair') qualityColor = '#ffffff'
         }
-        // Keep a stable key by day in case multiple price points exist for same day.
-        void dayKey
         return { ...o, quality, qualityColor }
       })
   }, [filteredOrders, selectedCommodity, overlayMode, overlaySelection, marketPrices])
@@ -551,11 +557,10 @@ function CommoditiesView({
     if (overlayMode) return []
     if (!selectedCommodity) return []
 
-    const dayKey = (d: Date) => d.toISOString().slice(0, 10)
-    const qualityByDay = new Map<string, string>()
+    const qualityByWeek = new Map<string, string>()
     commodityOrders.forEach((o) => {
       if (!o.qualityColor) return
-      qualityByDay.set(dayKey(new Date(o.createdAt)), o.qualityColor)
+      qualityByWeek.set(weekKey(new Date(o.createdAt)), o.qualityColor)
     })
 
     const all = marketPrices.filter((p) => p.commodityId === selectedCommodity)
@@ -569,11 +574,23 @@ function CommoditiesView({
       .sort((a, b) => a.x.getTime() - b.x.getTime())
     if (!preferred.length) return fallback
 
-    return preferred
-      .map((p) => {
-        const d = new Date(p.asOf)
-        const q = qualityByDay.get(dayKey(d))
-        return { x: d, y: p.price, strokeColor: q } // undefined => use commodity color
+    // Downsample to weekly (one point per week) to reduce clutter.
+    const byWeek = new Map<string, { t: number; price: number }>()
+    for (const p of preferred) {
+      const d = new Date(p.asOf)
+      const t = d.getTime()
+      if (!Number.isFinite(t)) continue
+      const wk = weekKey(d)
+      const prev = byWeek.get(wk)
+      // Keep the latest point within the week.
+      if (!prev || t > prev.t) byWeek.set(wk, { t, price: p.price })
+    }
+
+    return Array.from(byWeek.entries())
+      .map(([wk, v]) => {
+        const d = new Date(v.t)
+        const q = qualityByWeek.get(wk)
+        return { x: d, y: v.price, strokeColor: q } // undefined => commodity color
       })
       .sort((a, b) => a.x.getTime() - b.x.getTime())
   }, [marketPrices, commodityOrders, overlayMode, selectedCommodity])

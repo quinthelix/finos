@@ -15,8 +15,14 @@ type Props = {
   bottomHeight?: number
 }
 
-function dayKeyFromMs(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10)
+function weekKeyFromMs(ms: number): string {
+  const d = new Date(ms)
+  // ISO-ish week start: Monday 00:00 UTC
+  const day = d.getUTCDay() // 0..6 (Sun..Sat)
+  const diff = (day + 6) % 7 // 0 for Mon, 6 for Sun
+  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0))
+  start.setUTCDate(start.getUTCDate() - diff)
+  return start.toISOString().slice(0, 10)
 }
 
 export function SplitChart({
@@ -46,24 +52,24 @@ export function SplitChart({
       bottom.querySelectorAll<SVGCircleElement>('circle[data-kind="dot"][data-quality="1"][data-x]')
     )
 
-    // Map purchase bars by day key -> bar baseline point (center x, bottom y)
-    const barByDay = new Map<string, { x: number; y: number }>()
+    // Map purchase bars by week key -> bar baseline point (center x, bottom y)
+    const barByWeek = new Map<string, { x: number; y: number }>()
     for (const r of barRects) {
       const xAttr = r.getAttribute('data-x')
       if (!xAttr) continue
-      const day = dayKeyFromMs(Number(xAttr))
+      const wk = weekKeyFromMs(Number(xAttr))
       const rect = r.getBoundingClientRect()
       const x = rect.left + rect.width / 2 - containerRect.left
       const y = rect.bottom - containerRect.top // baseline == bottom of bar
-      barByDay.set(day, { x, y })
+      barByWeek.set(wk, { x, y })
     }
 
     const next: Arrow[] = []
     for (const c of dotCircles) {
       const xAttr = c.getAttribute('data-x')
       if (!xAttr) continue
-      const day = dayKeyFromMs(Number(xAttr))
-      const target = barByDay.get(day)
+      const wk = weekKeyFromMs(Number(xAttr))
+      const target = barByWeek.get(wk)
       if (!target) continue
 
       const color = c.getAttribute('data-stroke') || ''
@@ -126,7 +132,6 @@ export function SplitChart({
           series={bottomSeries}
           height={bottomHeight}
           pinnedX={pinnedX}
-          minYZero
           hideAreas
           xDomain={xDomain}
           showXAxis={false}

@@ -26,3 +26,5 @@ ALTER TABLE commodities ALTER COLUMN provider SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_commodities_provider ON commodities(provider);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_market_prices_unique ON market_prices (commodity_id, as_of, source);
+
+

@@ -10,3 +10,5 @@ WHERE status = 'confirmed';
 UPDATE erp_purchase_orders
 SET status = 'in_approval'
 WHERE status = 'draft';
+
+
