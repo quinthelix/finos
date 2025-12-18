@@ -44,7 +44,6 @@ npm run dev
 - `src/domain/types.ts`: shared domain shapes used by `src/api.ts`
 - `src/domain/colors.ts`: stable commodity color palette + quality colors
 - `src/domain/formatters.ts`: formatting helpers (used where applicable)
-- `src/services/purchases.ts`: pure helpers (grouping, quality tagging, inventory mapping)
 
 Note: `src/types.ts` also exists and is currently used in parts of `src/App.tsx`. Long-term we should consolidate types to `src/domain/types.ts`.
 
@@ -61,11 +60,16 @@ Note: `src/types.ts` also exists and is currently used in parts of `src/App.tsx`
     - `xDomain` to force multiple charts to share the same X span
 
 - `src/components/SplitChart.tsx`
-  - Composes two `LineChart` instances:
+  - Composes two `LineChart` instances **plus a right-side panel**:
     - top: purchases (bars) + inventory (dashed)
     - bottom: commodity unit price (line)
+    - right: **purchase quality spend pie** (good/fair/bad, weighted by dollars spent)
   - Overlays **dashed connector arrows** from quality-colored price dots to the purchase bar baseline.
   - Price dots are **downsampled to weekly points** to avoid clutter; arrows and quality matching are also done per-week.
+
+- `src/components/QualitySpendPie.tsx`
+  - Pure SVG “donut” pie for **purchase quality spend breakdown**.
+  - Shows slice % labels (using the same font/color style as chart axis ticks) and omits labels for very small slices to avoid clutter.
 
 #### Application composition
 
@@ -74,7 +78,8 @@ Note: `src/types.ts` also exists and is currently used in parts of `src/App.tsx`
   - Commodities view:
     - loads orders + inventory + market prices
     - computes purchase “quality” using a rolling median window and a ±10% band (good/fair/bad)
-    - renders `SplitChart` and the purchase table; clicking a row pins the crosshair
+    - computes **quality spend buckets** (good/fair/bad weighted by dollars spent)
+    - renders `SplitChart` (including the pie panel) and the purchase table; clicking a row pins the crosshair
 
 ### Design diagram (Mermaid)
 
@@ -87,6 +92,7 @@ flowchart TB
     Colors[src/domain/colors.ts]
     LineChart[src/components/LineChart.tsx]
     SplitChart[src/components/SplitChart.tsx]
+    Pie[src/components/QualitySpendPie.tsx]
   end
 
   App -->|fetches| API
@@ -96,6 +102,7 @@ flowchart TB
   SplitChart --> LineChart
   SplitChart -->|top panel| LineChart
   SplitChart -->|bottom panel| LineChart
+  SplitChart -->|right panel| Pie
 
   subgraph Gateway[services/api-gateway]
     GW[REST endpoints]
